@@ -1,9 +1,20 @@
 /* Taghvim service worker — network-first, versioned, self-healing.
    Online: always serves the freshest files (no more "stuck on old broken version").
    Offline: falls back to the last successful cache. */
-const CACHE = 'taghvim-v4';
+const CACHE = 'taghvim-v5';
 
-self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(CACHE);
+      // Cache only the tiny app shell up front. Hashed bundles are cached on first use.
+      await Promise.allSettled(
+        ['./', './index.html', './manifest.webmanifest', './icon.svg'].map((url) => cache.add(url))
+      );
+      await self.skipWaiting();
+    })()
+  );
+});
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(

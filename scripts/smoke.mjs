@@ -1,9 +1,10 @@
-/* Functional smoke test: executes the REAL production bundle (dist/) in a DOM
-   and verifies the app actually renders and responds — not a white screen.
+/* Functional smoke test: executes the REAL production bundle in a DOM
+   and verifies that the production app renders and responds — not a white screen.
    Scenarios:
-     1. fresh device (empty localStorage)
-     2. corrupted localStorage (previously caused a permanent white screen)
-     3. legacy data (string day values) + tab switching + opening the exam modal
+     1. fresh device and the main responsive planner UI
+     2. corrupted localStorage (must never cause a permanent white screen)
+     3. legacy data + navigation + exam modal
+     4. settings and appearance controls
    Run: npm run build && node scripts/smoke.mjs
 */
 import { readFileSync, readdirSync } from 'node:fs';
@@ -53,14 +54,16 @@ console.log('\nScenario 1: fresh device');
 let w = await boot();
 ok(text(w).length > 50, 'app rendered (root is not empty — no white screen)');
 ok(text(w).includes('تقویم'), 'brand header visible');
-ok(text(w).includes('برنامه هفتگی'), 'weekly planner heading visible');
-ok(text(w).includes('هفته من') && text(w).includes('امتحان‌ها'), 'bottom navigation visible');
+ok(text(w).includes('برنامه‌های این هفته'), 'weekly planner heading visible');
+ok(text(w).includes('برنامه این هفته') && text(w).includes('روز فعال'), 'weekly summary visible');
+ok(text(w).includes('هفته من') && text(w).includes('امتحان‌ها'), 'navigation visible');
 ok(['شنبه', 'یکشنبه', 'دوشنبه', 'جمعه'].every((d) => text(w).includes(d)), 'all week days rendered');
+ok(query(w, '.mobile-day-picker button').length === 7, 'mobile day picker has seven compact day buttons');
 
 /* ---------- 2. corrupted localStorage ---------- */
 console.log('\nScenario 2: corrupted localStorage (old white-screen cause)');
 w = await boot({ 'taghvim-plans': '{invalid json!!!', 'taghvim-exams': '{"not":"an array"}' });
-ok(text(w).includes('برنامه هفتگی'), 'app still renders despite corrupted storage');
+ok(text(w).includes('برنامه‌های این هفته'), 'app still renders despite corrupted storage');
 ok(!text(w).includes('مشکلی پیش آمد'), 'error boundary not triggered');
 
 /* ---------- 3. legacy data + interactions ---------- */
@@ -79,9 +82,23 @@ findButton(w, 'امتحان‌ها', 'nav button')?.dispatchEvent(new w.MouseEve
 await new Promise((r) => setTimeout(r, 30));
 ok(text(w).includes('فیزیک'), 'exams tab shows the exam after navigation');
 
-findButton(w, 'امتحان جدید', 'main .heading button')?.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+findButton(w, 'امتحان جدید', '.exam-section-head button')?.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
 await new Promise((r) => setTimeout(r, 30));
 ok(!!w.document.querySelector('.modal input[type="date"]'), 'exam modal opens with a date field');
+ok(w.document.querySelector('.modal')?.getAttribute('aria-modal') === 'true', 'modal exposes accessible dialog semantics');
+
+/* ---------- 4. settings + appearance ---------- */
+console.log('\nScenario 4: settings and appearance');
+w.document.querySelector('.modal .close-button')?.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+await new Promise((r) => setTimeout(r, 20));
+w.document.querySelector('.icon-button[aria-label="تنظیمات"]')?.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+await new Promise((r) => setTimeout(r, 30));
+ok(text(w).includes('تنظیمات تقویم'), 'settings panel opens');
+ok(query(w, '.theme-options button').length === 3, 'automatic, light, and dark themes are available');
+findButton(w, 'تیره', '.theme-options button')?.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+await new Promise((r) => setTimeout(r, 30));
+ok(w.document.documentElement.dataset.theme === 'dark', 'dark appearance applies immediately');
+ok(w.localStorage.getItem('taghvim-theme') === 'dark', 'appearance preference persists');
 
 console.log(failures ? `\n❌ ${failures} check(s) FAILED` : '\n✅ ALL CHECKS PASSED — app boots and works');
 process.exit(failures ? 1 : 0);

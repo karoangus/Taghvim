@@ -85,7 +85,14 @@ function normalizeExam(raw) {
     id: raw.id ? String(raw.id) : uid(),
     name: name.slice(0, 80),
     date,
+    description: String(raw.description ?? raw.desc ?? '').trim().slice(0, 500),
   };
+}
+
+function taskSticker(index) {
+  const number = index + 1;
+  if (number === 10) return '🔟';
+  return String(number).split('').map((digit) => `${digit}️⃣`).join('');
 }
 
 function isPlanComplete(plan, weekKey) {
@@ -212,7 +219,7 @@ function buildIcs(exams) {
       `DTSTART;VALUE=DATE:${start}`,
       `DTEND;VALUE=DATE:${toInput(end).replace(/-/g, '')}`,
       `SUMMARY:${escape(exam.name)}`,
-      'DESCRIPTION:',
+      `DESCRIPTION:${escape(exam.description || exam.name)}`,
       'BEGIN:VALARM',
       'TRIGGER:-P1D',
       'ACTION:DISPLAY',
@@ -337,7 +344,12 @@ function Modal({ data, onClose, onPlan, onExam }) {
           event.preventDefault();
           if (!canSubmit) return;
           if (isExam) {
-            onExam({ id: value.id, name: value.name.trim(), date: value.date });
+            onExam({
+              id: value.id,
+              name: value.name.trim(),
+              date: value.date,
+              description: value.description.trim(),
+            });
           } else {
             onPlan({
               id: value.id,
@@ -390,18 +402,16 @@ function Modal({ data, onClose, onPlan, onExam }) {
           </div>
         )}
 
-        {!isExam && (
-          <label className="field description-field">
-            <span>توضیحات <small>اختیاری</small></span>
-            <textarea
-              value={value.description}
-              maxLength={500}
-              rows={3}
-              onChange={(event) => setValue({ ...value, description: event.target.value })}
-              placeholder="نکته‌ها یا جزئیات این برنامه را بنویس…"
-            />
-          </label>
-        )}
+        <label className="field description-field">
+          <span>توضیحات <small>اختیاری</small></span>
+          <textarea
+            value={value.description}
+            maxLength={500}
+            rows={3}
+            onChange={(event) => setValue({ ...value, description: event.target.value })}
+            placeholder={isExam ? 'نکته‌ها یا جزئیات این امتحان را بنویس…' : 'نکته‌ها یا جزئیات این برنامه را بنویس…'}
+          />
+        </label>
 
         {!isExam && (
           <fieldset className="color-field">
@@ -582,7 +592,7 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove }) {
     <div className="plan-tasks">
       {plan.tasks.length > 0 && (
         <ul className="task-list">
-          {plan.tasks.map((task) => {
+          {plan.tasks.map((task, index) => {
             const isDone = task.done === thisWeek;
             return (
               <li key={task.id} className={isDone ? 'done' : ''}>
@@ -596,7 +606,8 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove }) {
                 >
                   {isDone && <Check size={11} strokeWidth={3.4} />}
                 </button>
-                <span>{task.title}</span>
+                <span className="task-number" aria-hidden="true">{taskSticker(index)}</span>
+                <span className="task-title">{task.title}</span>
                 <button
                   className="task-delete"
                   type="button"
@@ -777,11 +788,11 @@ function App() {
     .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date)), [exams, now]);
 
   const visibleUpcoming = useMemo(
-    () => upcoming.filter((exam) => matchesQuery(exam.name)),
+    () => upcoming.filter((exam) => matchesQuery(exam.name, exam.description)),
     [upcoming, matchesQuery],
   );
   const visiblePast = useMemo(
-    () => past.filter((exam) => matchesQuery(exam.name)),
+    () => past.filter((exam) => matchesQuery(exam.name, exam.description)),
     [past, matchesQuery],
   );
 
@@ -1243,6 +1254,7 @@ function App() {
                         <span className="remaining"><Clock3 size={14} />{remaining(exam, now)}</span>
                       </div>
                       <small>{longDate(parseLocalDate(exam.date))}</small>
+                      {exam.description && <p className="exam-description">{exam.description}</p>}
                     </div>
                     <button
                       className="more-button exam-more"
@@ -1272,7 +1284,11 @@ function App() {
                   {visiblePast.map((exam) => (
                     <div className="past-row" key={exam.id}>
                       <CheckCircle2 size={19} />
-                      <div><b>{exam.name}</b><span>{longDate(parseLocalDate(exam.date))}</span></div>
+                      <div>
+                        <b>{exam.name}</b>
+                        <span>{longDate(parseLocalDate(exam.date))}</span>
+                        {exam.description && <small className="past-description">{exam.description}</small>}
+                      </div>
                       <button onClick={() => removeExam(exam.id)} aria-label={`حذف ${exam.name}`}><Trash2 size={17} /></button>
                     </div>
                   ))}

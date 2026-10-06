@@ -116,12 +116,16 @@ ok(text(w).includes('فیزیک'), 'exams tab shows the exam after navigation');
 click(w, findButton(w, 'امتحان جدید', '.exam-section-head button'));
 await tick();
 ok(!!w.document.querySelector('.modal input[type="date"]'), 'exam modal opens with a date field');
-ok(!w.document.querySelector('.modal textarea'), 'description field is no longer in the form');
+ok(!!w.document.querySelector('.modal textarea'), 'exam form offers an optional description field');
 ok(w.document.querySelector('.modal')?.getAttribute('aria-modal') === 'true', 'modal exposes accessible dialog semantics');
 ok(w.document.body.style.overflow === 'hidden', 'background scroll is locked while a dialog is open');
-press(w, 'Escape');
+type(w, w.document.querySelector('.modal input'), 'زیست');
+type(w, w.document.querySelector('.modal textarea'), 'مرور فصل‌های یک و دو');
+w.document.querySelector('.modal')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
 await tick();
-ok(!w.document.querySelector('.modal'), 'Escape closes the dialog');
+ok(w.localStorage.getItem('taghvim-exams')?.includes('مرور فصل‌های یک و دو'), 'exam description is saved to local storage');
+ok(query(w, '.exam-description').some((node) => node.textContent === 'مرور فصل‌های یک و دو'), 'saved exam description appears on its card');
+ok(!w.document.querySelector('.modal'), 'submitting the exam closes the dialog');
 ok(w.document.body.style.overflow !== 'hidden', 'scroll lock is released again');
 
 /* ---------- 4. settings + appearance + data tools ---------- */
@@ -168,6 +172,7 @@ ok(text(w).includes('زیرتسک'), 'weekly sub-task progress is shown');
 click(w, w.document.querySelector('.plan-main'));
 await tick();
 ok(!!w.document.querySelector('.task-list li'), 'opening a plan reveals its sub-tasks');
+ok(w.document.querySelector('.task-number')?.textContent === '1️⃣', 'first sub-task has a numbered emoji sticker');
 ok(!!w.document.querySelector('.task-add input'), 'opened plan shows a sub-task composer');
 click(w, w.document.querySelector('.task-check'));
 await tick();
@@ -184,6 +189,7 @@ await tick();
 w.document.querySelector('.task-add')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
 await tick();
 ok(query(w, '.task-list li').length === 2 && text(w).includes('تمرین صفحه ۱۲'), 'a new sub-task can be added under the plan');
+ok(query(w, '.task-number')[1]?.textContent === '2️⃣', 'each sub-task gets its own sequential emoji sticker');
 
 click(w, w.document.querySelector('.plan-card .more-button'));
 await tick();
@@ -247,6 +253,16 @@ ok(query(w, '.plan-card').length === 0, 'no false matches');
 click(w, w.document.querySelector('.search-clear'));
 await tick();
 ok(query(w, '.plan-card').length === 2, 'clearing the search restores everything');
+
+const examDate = new Date().toISOString().slice(0, 10);
+w = await boot({
+  'taghvim-exams': JSON.stringify([{ id: 'e1', name: 'زیست', date: examDate, description: 'فصل سلول' }]),
+});
+click(w, findButton(w, 'امتحان‌ها', 'nav button'));
+await tick();
+type(w, w.document.querySelector('.search-box input'), 'سلول');
+await tick();
+ok(query(w, '.exam-card').length === 1, 'exam search matches its description');
 
 /* ---------- 8. keyboard shortcuts ---------- */
 console.log('\nScenario 8: keyboard shortcuts and saved font scale');

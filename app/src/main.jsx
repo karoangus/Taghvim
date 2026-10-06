@@ -16,6 +16,7 @@ import {
   Monitor,
   Moon,
   MoreHorizontal,
+  Minus,
   Plus,
   Search,
   Settings,
@@ -32,6 +33,8 @@ const planColors = ['#6558e8', '#ee7b53', '#16a37d', '#d95782', '#d89a25', '#318
 const PLANS_KEY = 'taghvim-plans';
 const EXAMS_KEY = 'taghvim-exams';
 const THEME_KEY = 'taghvim-theme';
+const FONT_SCALE_KEY = 'taghvim-font-scale';
+const FONT_SCALE_OPTIONS = [0.9, 1, 1.1, 1.2];
 
 const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const faNumber = (value) => {
@@ -65,6 +68,7 @@ function normalizePlan(raw) {
   return {
     id: raw.id ? String(raw.id) : uid(),
     title: title.slice(0, 80),
+    description: String(raw.description ?? raw.desc ?? '').trim().slice(0, 500),
     day: Number.isFinite(day) ? Math.min(6, Math.max(0, Math.trunc(day))) : 0,
     time,
     color: typeof raw.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(raw.color) ? raw.color : planColors[0],
@@ -114,6 +118,19 @@ function loadTheme() {
     return ['auto', 'light', 'dark'].includes(value) ? value : 'auto';
   } catch {
     return 'auto';
+  }
+}
+
+function normalizeFontScale(value) {
+  const numeric = Number(value);
+  return FONT_SCALE_OPTIONS.find((option) => Math.abs(option - numeric) < 0.001) ?? 1;
+}
+
+function loadFontScale() {
+  try {
+    return normalizeFontScale(localStorage.getItem(FONT_SCALE_KEY));
+  } catch {
+    return 1;
   }
 }
 
@@ -301,6 +318,7 @@ function Modal({ data, onClose, onPlan, onExam }) {
     date: data.date || toInput(new Date()),
     time: data.time || '',
     color: data.color || planColors[(data.day ?? 0) % planColors.length],
+    description: String(data.description ?? data.desc ?? ''),
   });
 
   const title = `${isEditing ? 'ویرایش' : 'افزودن'} ${isExam ? 'امتحان' : 'برنامه'}`;
@@ -327,6 +345,7 @@ function Modal({ data, onClose, onPlan, onExam }) {
               day: Number(value.day),
               time: value.time,
               color: value.color,
+              description: value.description.trim(),
             });
           }
         }}
@@ -372,6 +391,19 @@ function Modal({ data, onClose, onPlan, onExam }) {
         )}
 
         {!isExam && (
+          <label className="field description-field">
+            <span>توضیحات <small>اختیاری</small></span>
+            <textarea
+              value={value.description}
+              maxLength={500}
+              rows={3}
+              onChange={(event) => setValue({ ...value, description: event.target.value })}
+              placeholder="نکته‌ها یا جزئیات این برنامه را بنویس…"
+            />
+          </label>
+        )}
+
+        {!isExam && (
           <fieldset className="color-field">
             <legend>رنگ برنامه</legend>
             <div className="color-options">
@@ -404,12 +436,13 @@ function Modal({ data, onClose, onPlan, onExam }) {
 }
 
 function SettingsPanel({
-  theme, setTheme, plansCount, examsCount, examTotal,
+  theme, setTheme, fontScale, setFontScale, plansCount, examsCount, examTotal,
   onExport, onExportIcs, onImport, onClearAll, onClose,
 }) {
   const dialogRef = useDialog(onClose);
   const fileRef = useRef(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const fontScaleIndex = FONT_SCALE_OPTIONS.indexOf(fontScale);
 
   const options = [
     { id: 'auto', label: 'خودکار', icon: Monitor },
@@ -440,6 +473,36 @@ function SettingsPanel({
                 <span>{label}</span>
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="setting-block font-setting">
+          <div className="setting-copy">
+            <b>اندازه‌ی نوشته‌ها</b>
+            <span>اندازه‌ی فونت برنامه را کوچک‌تر یا بزرگ‌تر کن.</span>
+          </div>
+          <div className="font-scale-control" role="group" aria-label="تنظیم اندازه‌ی نوشته‌ها">
+            <button
+              className="font-scale-button"
+              type="button"
+              aria-label="کوچک‌تر کردن فونت"
+              disabled={fontScaleIndex <= 0}
+              onClick={() => setFontScale((current) => {
+                const index = FONT_SCALE_OPTIONS.indexOf(current);
+                return FONT_SCALE_OPTIONS[Math.max(0, index - 1)];
+              })}
+            ><span aria-hidden="true">ا</span><Minus size={16} /></button>
+            <strong aria-live="polite">{faNumber(Math.round(fontScale * 100))}٪</strong>
+            <button
+              className="font-scale-button"
+              type="button"
+              aria-label="بزرگ‌تر کردن فونت"
+              disabled={fontScaleIndex >= FONT_SCALE_OPTIONS.length - 1}
+              onClick={() => setFontScale((current) => {
+                const index = FONT_SCALE_OPTIONS.indexOf(current);
+                return FONT_SCALE_OPTIONS[Math.min(FONT_SCALE_OPTIONS.length - 1, index + 1)];
+              })}
+            ><span aria-hidden="true">ا</span><Plus size={16} /></button>
           </div>
         </div>
 
@@ -603,6 +666,7 @@ function App() {
   const [expandedPlan, setExpandedPlan] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState(loadTheme);
+  const [fontScale, setFontScale] = useState(loadFontScale);
   const [toast, setToast] = useState(null);
   const [queryText, setQueryText] = useState('');
   const searchRef = useRef(null);
@@ -643,12 +707,20 @@ function App() {
     return () => media?.removeEventListener?.('change', applyTheme);
   }, [theme]);
 
+  /* Scale all rem-based text and persist the choice across visits. */
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${Math.round(fontScale * 100)}%`;
+    document.documentElement.style.setProperty('--font-scale', String(fontScale));
+    try { localStorage.setItem(FONT_SCALE_KEY, String(fontScale)); } catch { /* ignore */ }
+  }, [fontScale]);
+
   /* Stay in sync when the app is open in another tab or window. */
   useEffect(() => {
     const onStorage = (event) => {
       if (event.key === PLANS_KEY) setPlans(loadList(PLANS_KEY, normalizePlan));
       if (event.key === EXAMS_KEY) setExams(loadList(EXAMS_KEY, normalizeExam));
       if (event.key === THEME_KEY) setTheme(loadTheme());
+      if (event.key === FONT_SCALE_KEY) setFontScale(loadFontScale());
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -692,7 +764,7 @@ function App() {
   }, [needle]);
 
   const visiblePlans = useMemo(
-    () => plans.filter((plan) => matchesQuery(plan.title, ...plan.tasks.map((task) => task.title))),
+    () => plans.filter((plan) => matchesQuery(plan.title, plan.description, ...plan.tasks.map((task) => task.title))),
     [plans, matchesQuery],
   );
 
@@ -873,7 +945,7 @@ function App() {
   }
 
   function exportData() {
-    const payload = JSON.stringify({ app: 'taghvim', version: 4, exportedAt: new Date().toISOString(), plans, exams }, null, 2);
+    const payload = JSON.stringify({ app: 'taghvim', version: 5, exportedAt: new Date().toISOString(), plans, exams }, null, 2);
     const okFile = downloadFile(`taghvim-backup-${toInput(new Date())}.json`, payload, 'application/json');
     notify(okFile ? 'فایل پشتیبان آماده شد' : 'دریافت فایل در این مرورگر ممکن نشد');
   }
@@ -1103,6 +1175,7 @@ function App() {
                                 onClick={(event) => { event.stopPropagation(); setMenu(menu === plan.id ? null : plan.id); }}
                               ><MoreHorizontal size={19} /></button>
                             </div>
+                            {plan.description && <p className="plan-description">{plan.description}</p>}
                             {(plan.time || plan.tasks.length > 0) && (
                               <div className="plan-meta">
                                 {plan.time && <span className="plan-time"><Clock3 size={13} /> ساعت {faDigits(plan.time)}</span>}
@@ -1226,6 +1299,8 @@ function App() {
         <SettingsPanel
           theme={theme}
           setTheme={setTheme}
+          fontScale={fontScale}
+          setFontScale={setFontScale}
           plansCount={plans.length}
           examsCount={exams.length}
           examTotal={exams.length}

@@ -6,8 +6,9 @@
      3. legacy data + navigation + exam modal
      4. settings, appearance, backup & restore controls
      5. sub-tasks under plans (weekly progress that resets by itself)
-     6. search / filtering
-     7. keyboard shortcuts
+     6. plan descriptions + conditional description/task display
+     7. search / filtering
+     8. keyboard shortcuts + saved font scale
    Run: npm run build && node scripts/smoke.mjs
 */
 import { readFileSync, readdirSync } from 'node:fs';
@@ -52,13 +53,17 @@ const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 const text = (w) => w.document.getElementById('root').textContent || '';
 const query = (w, sel) => [...w.document.querySelectorAll(sel)];
 const findButton = (w, label, sel = 'button') => query(w, sel).find((b) => (b.textContent || '').includes(label));
+const findPlanCard = (w, title) => query(w, '.plan-card').find((card) => card.querySelector('.plan-main')?.textContent.includes(title));
 const click = (w, el) => el?.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
 const press = (w, key, target) => (target || w.document.body)
   .dispatchEvent(new w.KeyboardEvent('keydown', { key, bubbles: true }));
 
 /* React tracks its own value — set it through the native setter so onChange fires. */
 function type(w, input, value) {
-  const setter = Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set;
+  const prototype = input instanceof w.HTMLTextAreaElement
+    ? w.HTMLTextAreaElement.prototype
+    : w.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
   setter.call(input, value);
   input.dispatchEvent(new w.Event('input', { bubbles: true }));
 }
@@ -135,6 +140,14 @@ ok(!!findButton(w, 'بازگردانی پشتیبان', '.settings-modal button'
 ok(!!w.document.querySelector('.settings-modal input[type="file"]'), 'restore uses a real file picker');
 ok(!!findButton(w, 'ICS', '.settings-modal button'), 'exams can be exported to a calendar file');
 ok(!!findButton(w, 'پاک کردن همه داده‌ها', '.settings-modal button'), 'clear-all control available');
+click(w, w.document.querySelector('[aria-label="کوچک‌تر کردن فونت"]'));
+await tick();
+ok(w.document.documentElement.style.fontSize === '90%', 'font-size setting makes app text smaller');
+ok(w.localStorage.getItem('taghvim-font-scale') === '0.9', 'font-size preference persists');
+click(w, w.document.querySelector('[aria-label="بزرگ‌تر کردن فونت"]'));
+click(w, w.document.querySelector('[aria-label="بزرگ‌تر کردن فونت"]'));
+await tick();
+ok(w.document.documentElement.style.fontSize === '110%', 'font-size setting makes app text larger');
 click(w, findButton(w, 'پاک کردن همه داده‌ها', '.settings-modal button'));
 await tick();
 ok(!!findButton(w, 'بله، همه را پاک کن', '.settings-modal button'), 'clear-all asks for confirmation first');
@@ -180,8 +193,44 @@ click(w, findButton(w, 'کپی', '.menu button'));
 await tick();
 ok(query(w, '.plan-card').length === 2, 'duplicate plan added');
 
-/* ---------- 6. search ---------- */
-console.log('\nScenario 6: search and filtering');
+/* ---------- 6. plan descriptions + conditional details ---------- */
+console.log('\nScenario 6: plan descriptions and conditional details');
+w = await boot();
+press(w, 'n');
+await tick();
+ok(!!w.document.querySelector('.modal textarea'), 'plan form offers an optional description field');
+type(w, w.document.querySelector('.modal input'), 'مرور فصل اول');
+type(w, w.document.querySelector('.modal textarea'), 'نکته‌های مهم فصل را مرور کن');
+w.document.querySelector('.modal')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+await tick();
+ok(w.document.querySelector('.plan-description')?.textContent === 'نکته‌های مهم فصل را مرور کن', 'saved plan description appears on its card');
+ok(JSON.parse(w.localStorage.getItem('taghvim-plans') || '[]')[0]?.description === 'نکته‌های مهم فصل را مرور کن', 'plan description is persisted');
+
+w = await boot({
+  'taghvim-plans': JSON.stringify([
+    { id: 'desc-only', title: 'فقط توضیح', day: 2, description: 'شرح برنامه' },
+    { id: 'tasks-only', title: 'فقط زیرتسک', day: 2, tasks: [{ id: 't1', title: 'تمرین', done: '' }] },
+    { id: 'both', title: 'توضیح و زیرتسک', day: 2, description: 'شرح همراه زیرتسک', tasks: [{ id: 't2', title: 'مرور', done: '' }] },
+  ]),
+});
+const descriptionOnly = findPlanCard(w, 'فقط توضیح');
+const tasksOnly = findPlanCard(w, 'فقط زیرتسک');
+const both = findPlanCard(w, 'توضیح و زیرتسک');
+ok(descriptionOnly?.querySelector('.plan-description')?.textContent === 'شرح برنامه', 'description-only plan shows its description');
+ok(!tasksOnly?.querySelector('.plan-description'), 'task-only plan has no empty description section');
+ok(both?.querySelector('.plan-description')?.textContent === 'شرح همراه زیرتسک', 'plan with both fields shows its description');
+click(w, descriptionOnly?.querySelector('.plan-main'));
+await tick();
+ok(!!descriptionOnly?.querySelector('.plan-description') && !descriptionOnly?.querySelector('.task-list'), 'description-only plan does not show an empty sub-task list');
+click(w, tasksOnly?.querySelector('.plan-main'));
+await tick();
+ok(!tasksOnly?.querySelector('.plan-description') && !!tasksOnly?.querySelector('.task-list'), 'task-only plan shows only its sub-tasks');
+click(w, both?.querySelector('.plan-main'));
+await tick();
+ok(!!both?.querySelector('.plan-description') && !!both?.querySelector('.task-list'), 'plan with both fields shows both details');
+
+/* ---------- 7. search ---------- */
+console.log('\nScenario 7: search and filtering');
 w = await boot({
   'taghvim-plans': JSON.stringify([
     { id: 'a', title: 'ریاضی', day: 2 },
@@ -199,8 +248,10 @@ click(w, w.document.querySelector('.search-clear'));
 await tick();
 ok(query(w, '.plan-card').length === 2, 'clearing the search restores everything');
 
-/* ---------- 7. keyboard shortcuts ---------- */
-console.log('\nScenario 7: keyboard shortcuts');
+/* ---------- 8. keyboard shortcuts ---------- */
+console.log('\nScenario 8: keyboard shortcuts and saved font scale');
+let savedFontScale = await boot({ 'taghvim-font-scale': '1.2' });
+ok(savedFontScale.document.documentElement.style.fontSize === '120%', 'saved font scale is restored on startup');
 w = await boot();
 press(w, '2');
 await tick();
@@ -211,7 +262,7 @@ ok(text(w).includes('برنامه‌های این هفته'), '"1" jumps back to
 press(w, 'n');
 await tick();
 ok(!!w.document.querySelector('.modal'), '"N" opens the add dialog');
-ok(!w.document.querySelector('.modal textarea'), 'add dialog has no description field');
+ok(!!w.document.querySelector('.modal textarea'), 'plan dialog includes an optional description field');
 press(w, 'Escape');
 await tick();
 ok(!w.document.querySelector('.modal'), 'Escape closes it again');

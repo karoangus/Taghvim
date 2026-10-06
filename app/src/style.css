@@ -617,6 +617,7 @@ main {
 .plan-card {
   min-width: 0;
   position: relative;
+  cursor: pointer;
   padding: 11px 10px 11px 13px;
   overflow: visible;
   background: var(--surface-soft);
@@ -683,6 +684,16 @@ main {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.plan-card.expanded {
+  border-color: color-mix(in srgb, var(--plan-color) 35%, var(--line));
+  background: color-mix(in srgb, var(--plan-color) 5%, var(--surface-soft));
+}
+
+.plan-card.expanded p {
+  display: block;
+  -webkit-line-clamp: unset;
 }
 
 .day-empty {

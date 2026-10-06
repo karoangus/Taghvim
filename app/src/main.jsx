@@ -325,6 +325,7 @@ function App() {
   const [selectedDay, setSelectedDay] = useState(() => dayIndex(new Date()));
   const [modal, setModal] = useState(null);
   const [menu, setMenu] = useState(null);
+  const [expandedPlan, setExpandedPlan] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState(loadTheme);
   const [toast, setToast] = useState(null);
@@ -575,7 +576,22 @@ function App() {
 
                     <div className="plan-list">
                       {dayPlans.map((plan) => (
-                        <article className="plan-card" key={plan.id} style={{ '--plan-color': plan.color || planColors[0] }}>
+                        <article
+                          className={`plan-card ${expandedPlan === plan.id ? 'expanded' : ''}`}
+                          key={plan.id}
+                          style={{ '--plan-color': plan.color || planColors[0] }}
+                          onClick={() => setExpandedPlan(expandedPlan === plan.id ? null : plan.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setExpandedPlan(expandedPlan === plan.id ? null : plan.id);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={expandedPlan === plan.id}
+                          aria-label={`نمایش توضیحات ${plan.title}`}
+                        >
                           <div className="plan-accent" />
                           <div className="plan-card-head">
                             <b>{plan.title}</b>
@@ -586,7 +602,11 @@ function App() {
                             ><MoreHorizontal size={19} /></button>
                           </div>
                           {plan.time && <span className="plan-time"><Clock3 size={13} /> ساعت {plan.time}</span>}
-                          {plan.desc && <p>{plan.desc}</p>}
+                          {expandedPlan === plan.id && (
+                            <p className="plan-description" aria-live="polite">
+                              {plan.desc || 'برای این برنامه توضیحی ثبت نشده است.'}
+                            </p>
+                          )}
                           {menu === plan.id && (
                             <div className="menu" onClick={(event) => event.stopPropagation()}>
                               <button onClick={() => { setModal({ ...plan, type: 'plan' }); setMenu(null); }}><Edit3 size={15} />ویرایش</button>

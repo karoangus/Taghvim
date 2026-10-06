@@ -41,21 +41,34 @@ const faNumber = (value) => {
 const faDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
 /* ---------- normalisation: legacy/hand-edited data must never break the UI ---------- */
+function normalizeTask(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const title = String(raw.title ?? raw.name ?? '').trim();
+  if (!title) return null;
+  return {
+    id: raw.id ? String(raw.id) : uid(),
+    title: title.slice(0, 80),
+    // "done" stores the week it was completed in, so it resets automatically every week.
+    done: typeof raw.done === 'string' ? raw.done : '',
+  };
+}
+
 function normalizePlan(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const title = String(raw.title ?? raw.name ?? '').trim();
   if (!title) return null;
   const day = Number(raw.day);
   const time = typeof raw.time === 'string' && /^\d{1,2}:\d{2}$/.test(raw.time) ? raw.time : '';
+  const tasks = Array.isArray(raw.tasks)
+    ? raw.tasks.map(normalizeTask).filter(Boolean).slice(0, 40)
+    : [];
   return {
     id: raw.id ? String(raw.id) : uid(),
     title: title.slice(0, 80),
-    desc: String(raw.desc ?? raw.note ?? '').trim().slice(0, 300),
     day: Number.isFinite(day) ? Math.min(6, Math.max(0, Math.trunc(day))) : 0,
     time,
     color: typeof raw.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(raw.color) ? raw.color : planColors[0],
-    // "done" stores the week it was completed in, so it resets automatically every week.
-    done: typeof raw.done === 'string' ? raw.done : '',
+    tasks,
   };
 }
 
@@ -67,9 +80,12 @@ function normalizeExam(raw) {
   return {
     id: raw.id ? String(raw.id) : uid(),
     name: name.slice(0, 80),
-    desc: String(raw.desc ?? raw.note ?? '').trim().slice(0, 300),
     date,
   };
+}
+
+function isPlanComplete(plan, weekKey) {
+  return plan.tasks.length > 0 && plan.tasks.every((task) => task.done === weekKey);
 }
 
 /* ---------- storage: blocked or old storage must never break the app ---------- */
@@ -179,7 +195,7 @@ function buildIcs(exams) {
       `DTSTART;VALUE=DATE:${start}`,
       `DTEND;VALUE=DATE:${toInput(end).replace(/-/g, '')}`,
       `SUMMARY:${escape(exam.name)}`,
-      exam.desc ? `DESCRIPTION:${escape(exam.desc)}` : 'DESCRIPTION:',
+      'DESCRIPTION:',
       'BEGIN:VALARM',
       'TRIGGER:-P1D',
       'ACTION:DISPLAY',
@@ -281,7 +297,6 @@ function Modal({ data, onClose, onPlan, onExam }) {
     ...data,
     title: data.title || '',
     name: data.name || '',
-    desc: data.desc || '',
     day: data.day ?? 0,
     date: data.date || toInput(new Date()),
     time: data.time || '',
@@ -304,16 +319,14 @@ function Modal({ data, onClose, onPlan, onExam }) {
           event.preventDefault();
           if (!canSubmit) return;
           if (isExam) {
-            onExam({ id: value.id, name: value.name.trim(), desc: value.desc.trim(), date: value.date });
+            onExam({ id: value.id, name: value.name.trim(), date: value.date });
           } else {
             onPlan({
               id: value.id,
               title: value.title.trim(),
-              desc: value.desc.trim(),
               day: Number(value.day),
               time: value.time,
               color: value.color,
-              done: value.done || '',
             });
           }
         }}
@@ -378,17 +391,6 @@ function Modal({ data, onClose, onPlan, onExam }) {
             </div>
           </fieldset>
         )}
-
-        <label className="field">
-          <span>توضیحات <small>اختیاری</small></span>
-          <textarea
-            maxLength={300}
-            value={value.desc}
-            onChange={(event) => setValue({ ...value, desc: event.target.value })}
-            placeholder={isExam ? 'مباحث یا نکته‌ای که باید یادت بماند' : 'جزئیات کوتاه برنامه را بنویس...'}
-          />
-          <small className="char-count">{faNumber(value.desc.length)} / {faNumber(300)}</small>
-        </label>
 
         <div className="modal-actions">
           <button className="button secondary" type="button" onClick={onClose}>انصراف</button>
@@ -505,6 +507,66 @@ function SettingsPanel({
 
         <p className="privacy-note">همه اطلاعات فقط روی دستگاه تو نگهداری می‌شود و به سروری ارسال نمی‌شود.</p>
       </section>
+    </div>
+  );
+}
+
+function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove }) {
+  const [draft, setDraft] = useState('');
+  const canAdd = draft.trim().length > 0 && plan.tasks.length < 40;
+
+  return (
+    <div className="plan-tasks">
+      {plan.tasks.length > 0 && (
+        <ul className="task-list">
+          {plan.tasks.map((task) => {
+            const isDone = task.done === thisWeek;
+            return (
+              <li key={task.id} className={isDone ? 'done' : ''}>
+                <button
+                  className="plan-check task-check"
+                  type="button"
+                  aria-pressed={isDone}
+                  aria-label={`${isDone ? 'برگرداندن' : 'انجام شد'}: ${task.title}`}
+                  title={isDone ? 'انجام‌نشده کن' : 'انجام شد'}
+                  onClick={() => onToggle(plan.id, task.id)}
+                >
+                  {isDone && <Check size={11} strokeWidth={3.4} />}
+                </button>
+                <span>{task.title}</span>
+                <button
+                  className="task-delete"
+                  type="button"
+                  aria-label={`حذف ${task.title}`}
+                  onClick={() => onRemove(plan.id, task.id)}
+                >
+                  <X size={12} />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <form
+        className="task-add"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canAdd) return;
+          onAdd(plan.id, draft.trim());
+          setDraft('');
+        }}
+      >
+        <input
+          value={draft}
+          maxLength={80}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={plan.tasks.length ? 'زیرتسک تازه…' : 'اولین زیرتسک را بنویس…'}
+          aria-label={`افزودن زیرتسک به ${plan.title}`}
+        />
+        <button type="submit" disabled={!canAdd} aria-label="افزودن زیرتسک">
+          <Plus size={14} />
+        </button>
+      </form>
     </div>
   );
 }
@@ -630,7 +692,7 @@ function App() {
   }, [needle]);
 
   const visiblePlans = useMemo(
-    () => plans.filter((plan) => matchesQuery(plan.title, plan.desc)),
+    () => plans.filter((plan) => matchesQuery(plan.title, ...plan.tasks.map((task) => task.title))),
     [plans, matchesQuery],
   );
 
@@ -643,11 +705,11 @@ function App() {
     .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date)), [exams, now]);
 
   const visibleUpcoming = useMemo(
-    () => upcoming.filter((exam) => matchesQuery(exam.name, exam.desc)),
+    () => upcoming.filter((exam) => matchesQuery(exam.name)),
     [upcoming, matchesQuery],
   );
   const visiblePast = useMemo(
-    () => past.filter((exam) => matchesQuery(exam.name, exam.desc)),
+    () => past.filter((exam) => matchesQuery(exam.name)),
     [past, matchesQuery],
   );
 
@@ -655,8 +717,9 @@ function App() {
     () => new Set(plans.map((plan) => Number(plan.day)).filter((day) => day >= 0 && day <= 6)).size,
     [plans],
   );
-  const donePlans = useMemo(() => plans.filter((plan) => plan.done === thisWeek).length, [plans, thisWeek]);
-  const donePercent = plans.length ? Math.round((donePlans / plans.length) * 100) : 0;
+  const allTasks = useMemo(() => plans.flatMap((plan) => plan.tasks), [plans]);
+  const doneTasks = useMemo(() => allTasks.filter((task) => task.done === thisWeek).length, [allTasks, thisWeek]);
+  const donePercent = allTasks.length ? Math.round((doneTasks / allTasks.length) * 100) : 0;
   const tomorrow = upcoming.find((exam) => daysUntil(exam.date, now) === 1);
   const nextExam = upcoming[0];
   const todayIndex = dayIndex(now);
@@ -664,7 +727,8 @@ function App() {
     () => plans.filter((plan) => Number(plan.day) === todayIndex),
     [plans, todayIndex],
   );
-  const todayLeft = todayPlans.filter((plan) => plan.done !== thisWeek).length;
+  const todayTasks = useMemo(() => todayPlans.flatMap((plan) => plan.tasks), [todayPlans]);
+  const todayLeft = todayTasks.filter((task) => task.done !== thisWeek).length;
 
   const notify = useCallback((message, undo) => setToast({ id: uid(), message, undo }), []);
 
@@ -709,7 +773,7 @@ function App() {
     const plan = normalizePlan(data);
     if (!plan) return;
     setPlans((items) => (editing
-      ? items.map((item) => (item.id === data.id ? { ...item, ...plan, id: item.id } : item))
+      ? items.map((item) => (item.id === data.id ? { ...item, ...plan, id: item.id, tasks: item.tasks } : item))
       : [...items, plan]));
     setModal(null);
     setSelectedDay(plan.day);
@@ -727,21 +791,41 @@ function App() {
     notify(editing ? 'تغییرات امتحان ذخیره شد' : 'امتحان به تقویمت اضافه شد');
   }
 
-  function togglePlanDone(id) {
-    let becameDone = false;
+  function addTask(planId, title) {
+    const text = String(title || '').trim().slice(0, 80);
+    if (!text) return;
     setPlans((items) => items.map((plan) => {
-      if (plan.id !== id) return plan;
-      becameDone = plan.done !== thisWeek;
-      return { ...plan, done: becameDone ? thisWeek : '' };
+      if (plan.id !== planId || plan.tasks.length >= 40) return plan;
+      return { ...plan, tasks: [...plan.tasks, { id: uid(), title: text, done: '' }] };
     }));
-    setMenu(null);
-    if (becameDone) notify('آفرین! یک برنامه انجام شد 🎉');
+  }
+
+  function toggleTask(planId, taskId) {
+    setPlans((items) => items.map((plan) => {
+      if (plan.id !== planId) return plan;
+      return {
+        ...plan,
+        tasks: plan.tasks.map((task) => (
+          task.id === taskId ? { ...task, done: task.done === thisWeek ? '' : thisWeek } : task
+        )),
+      };
+    }));
+  }
+
+  function removeTask(planId, taskId) {
+    setPlans((items) => items.map((plan) => (
+      plan.id !== planId ? plan : { ...plan, tasks: plan.tasks.filter((task) => task.id !== taskId) }
+    )));
   }
 
   function duplicatePlan(id) {
     const source = plans.find((plan) => plan.id === id);
     if (!source) return;
-    setPlans((items) => [...items, { ...source, id: uid(), done: '' }]);
+    setPlans((items) => [...items, {
+      ...source,
+      id: uid(),
+      tasks: source.tasks.map((task) => ({ ...task, id: uid(), done: '' })),
+    }]);
     setMenu(null);
     notify('یک کپی از برنامه ساخته شد');
   }
@@ -789,7 +873,7 @@ function App() {
   }
 
   function exportData() {
-    const payload = JSON.stringify({ app: 'taghvim', version: 3, exportedAt: new Date().toISOString(), plans, exams }, null, 2);
+    const payload = JSON.stringify({ app: 'taghvim', version: 4, exportedAt: new Date().toISOString(), plans, exams }, null, 2);
     const okFile = downloadFile(`taghvim-backup-${toInput(new Date())}.json`, payload, 'application/json');
     notify(okFile ? 'فایل پشتیبان آماده شد' : 'دریافت فایل در این مرورگر ممکن نشد');
   }
@@ -819,7 +903,11 @@ function App() {
         notify('همه موارد این پشتیبان از قبل موجود بودند');
         return;
       }
-      setPlans((items) => [...items, ...addedPlans.map((plan) => ({ ...plan, id: uid() }))]);
+      setPlans((items) => [...items, ...addedPlans.map((plan) => ({
+        ...plan,
+        id: uid(),
+        tasks: plan.tasks.map((task) => ({ ...task, id: uid() })),
+      }))]);
       setExams((items) => [...items, ...addedExams.map((exam) => ({ ...exam, id: uid() }))]);
       setSettingsOpen(false);
       notify(
@@ -887,7 +975,9 @@ function App() {
             <p>
               {tab === 'week'
                 ? (todayPlans.length
-                  ? `امروز ${faNumber(todayPlans.length)} برنامه داری و ${todayLeft ? `${faNumber(todayLeft)} تای آن هنوز مانده.` : 'همه‌اش را انجام داده‌ای. عالی بود!'}`
+                  ? (todayTasks.length
+                    ? `امروز ${faNumber(todayPlans.length)} برنامه داری و ${todayLeft ? `${faNumber(todayLeft)} زیرتسک هنوز مانده.` : 'همه زیرتسک‌ها را انجام داده‌ای. عالی بود!'}`
+                    : `امروز ${faNumber(todayPlans.length)} برنامه داری؛ برای هر کدام زیرتسک بساز.`)
                   : 'برنامه‌هایت را سبک و روشن بچین؛ بقیه‌اش قدم‌به‌قدم جلو می‌رود.')
                 : 'تاریخ‌ها و مباحث مهم را یک‌جا نگه دار و هیچ موعدی را از دست نده.'}
             </p>
@@ -901,7 +991,7 @@ function App() {
                 <div className="summary-divider" />
                 <div className="summary-item"><span>روز فعال</span><b>{faNumber(activeDays)} <small>از ۷</small></b></div>
                 <div className="summary-divider" />
-                <div className="summary-item"><span>انجام‌شده</span><b>{faNumber(donePlans)}</b></div>
+                <div className="summary-item"><span>زیرتسک انجام‌شده</span><b>{faNumber(doneTasks)}</b></div>
               </>
             ) : (
               <>
@@ -920,7 +1010,7 @@ function App() {
         {tomorrow && (
           <div className="alert-card">
             <div className="alert-icon"><BellRing size={20} /></div>
-            <div><b>فردا امتحان {tomorrow.name} داری</b><span>{tomorrow.desc || 'یک مرور کوتاه امروز، خیال فردا را راحت می‌کند.'}</span></div>
+            <div><b>فردا امتحان {tomorrow.name} داری</b><span>یک مرور کوتاه امروز، خیال فردا را راحت می‌کند.</span></div>
             <button onClick={() => switchTab('exams')}>دیدن جزئیات</button>
           </div>
         )}
@@ -936,7 +1026,7 @@ function App() {
                 {searchBox}
                 <div className="week-progress">
                   <div>
-                    <span>{faNumber(donePlans)} از {faNumber(plans.length)} برنامه انجام شد</span>
+                    <span>{allTasks.length ? `${faNumber(doneTasks)} از ${faNumber(allTasks.length)} زیرتسک انجام شد` : 'زیرتسکی ثبت نشده'}</span>
                     <b>{faNumber(donePercent)}٪</b>
                   </div>
                   <div className="progress-track"><i style={{ width: `${donePercent}%` }} /></div>
@@ -967,8 +1057,8 @@ function App() {
                 const dayPlans = visiblePlans
                   .filter((plan) => Number(plan.day) === day.index)
                   .sort((a, b) => {
-                    const aDone = a.done === thisWeek ? 1 : 0;
-                    const bDone = b.done === thisWeek ? 1 : 0;
+                    const aDone = isPlanComplete(a, thisWeek) ? 1 : 0;
+                    const bDone = isPlanComplete(b, thisWeek) ? 1 : 0;
                     if (aDone !== bDone) return aDone - bDone;
                     return (a.time || '99:99').localeCompare(b.time || '99:99');
                   });
@@ -985,8 +1075,9 @@ function App() {
 
                     <div className="plan-list">
                       {dayPlans.map((plan) => {
-                        const isDone = plan.done === thisWeek;
                         const isOpen = expandedPlan === plan.id;
+                        const doneCount = plan.tasks.filter((task) => task.done === thisWeek).length;
+                        const isDone = isPlanComplete(plan, thisWeek);
                         return (
                           <article
                             className={`plan-card ${isOpen ? 'expanded' : ''} ${isDone ? 'done' : ''}`}
@@ -995,16 +1086,6 @@ function App() {
                           >
                             <div className="plan-accent" />
                             <div className="plan-card-head">
-                              <button
-                                className="plan-check"
-                                type="button"
-                                aria-pressed={isDone}
-                                aria-label={`${isDone ? 'برگرداندن' : 'انجام شد'}: ${plan.title}`}
-                                title={isDone ? 'انجام‌نشده کن' : 'انجام شد'}
-                                onClick={() => togglePlanDone(plan.id)}
-                              >
-                                {isDone && <Check size={12} strokeWidth={3.4} />}
-                              </button>
                               <button
                                 className="plan-main"
                                 type="button"
@@ -1022,17 +1103,25 @@ function App() {
                                 onClick={(event) => { event.stopPropagation(); setMenu(menu === plan.id ? null : plan.id); }}
                               ><MoreHorizontal size={19} /></button>
                             </div>
-                            {plan.time && <span className="plan-time"><Clock3 size={13} /> ساعت {faDigits(plan.time)}</span>}
+                            {(plan.time || plan.tasks.length > 0) && (
+                              <div className="plan-meta">
+                                {plan.time && <span className="plan-time"><Clock3 size={13} /> ساعت {faDigits(plan.time)}</span>}
+                                {plan.tasks.length > 0 && (
+                                  <span className="task-count">{faNumber(doneCount)} از {faNumber(plan.tasks.length)}</span>
+                                )}
+                              </div>
+                            )}
                             {isOpen && (
-                              <p className="plan-description">
-                                {plan.desc || 'برای این برنامه توضیحی ثبت نشده است.'}
-                              </p>
+                              <PlanTasks
+                                plan={plan}
+                                thisWeek={thisWeek}
+                                onToggle={toggleTask}
+                                onAdd={addTask}
+                                onRemove={removeTask}
+                              />
                             )}
                             {menu === plan.id && (
                               <div className="menu" role="menu" onClick={(event) => event.stopPropagation()}>
-                                <button role="menuitem" onClick={() => togglePlanDone(plan.id)}>
-                                  <Check size={15} />{isDone ? 'انجام‌نشده' : 'انجام شد'}
-                                </button>
                                 <button role="menuitem" onClick={() => { setModal({ ...plan, type: 'plan' }); setMenu(null); }}><Edit3 size={15} />ویرایش</button>
                                 <button role="menuitem" onClick={() => duplicatePlan(plan.id)}><Copy size={15} />کپی</button>
                                 <button role="menuitem" className="danger" onClick={() => removePlan(plan.id)}><Trash2 size={15} />حذف</button>
@@ -1080,7 +1169,6 @@ function App() {
                         <h3>{exam.name}</h3>
                         <span className="remaining"><Clock3 size={14} />{remaining(exam, now)}</span>
                       </div>
-                      <p>{exam.desc || 'توضیحی برای این امتحان ثبت نشده.'}</p>
                       <small>{longDate(parseLocalDate(exam.date))}</small>
                     </div>
                     <button

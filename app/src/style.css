@@ -664,12 +664,25 @@ main {
   background: var(--brand-soft);
 }
 
+.plan-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
 .plan-time {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 6px;
   color: var(--plan-color);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.task-count {
+  color: var(--text-soft);
   font-size: 8px;
   font-weight: 700;
 }
@@ -868,6 +881,8 @@ main {
 }
 
 .exam-info > small {
+  display: block;
+  margin-top: 6px;
   color: var(--muted);
   font-size: 9px;
 }
@@ -1428,13 +1443,114 @@ main {
 }
 
 .plan-card.done {
-  opacity: 0.62;
+  opacity: 1;
 }
 
 .plan-card.done .plan-main b {
   color: var(--text-soft);
   text-decoration: line-through;
   text-decoration-thickness: 1.5px;
+}
+
+.plan-tasks {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.task-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 2px;
+  border-radius: 7px;
+}
+
+.task-list li span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.task-list li.done span {
+  color: var(--text-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.task-check {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  border-radius: 5px;
+}
+
+.task-delete {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 6px;
+}
+
+.task-delete:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.task-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-add input {
+  min-width: 0;
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+  font-size: 9px;
+}
+
+.task-add input:focus {
+  border-color: color-mix(in srgb, var(--plan-color) 55%, var(--line));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--plan-color) 12%, transparent);
+}
+
+.task-add button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--brand-contrast);
+  background: var(--plan-color);
+  border-radius: 8px;
+}
+
+.task-add button:disabled {
+  color: var(--muted);
+  background: var(--line);
+  cursor: not-allowed;
 }
 
 .day-dot {
@@ -1825,7 +1941,9 @@ main {
   }
 
   .plan-time,
-  .plan-card p {
+  .plan-card p,
+  .task-list li span,
+  .task-add input {
     font-size: 10px;
   }
 

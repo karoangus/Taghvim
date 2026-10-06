@@ -5,7 +5,7 @@
      2. corrupted localStorage (must never cause a permanent white screen)
      3. legacy data + navigation + exam modal
      4. settings, appearance, backup & restore controls
-     5. marking plans as done (weekly progress that resets by itself)
+     5. sub-tasks under plans (weekly progress that resets by itself)
      6. search / filtering
      7. keyboard shortcuts
    Run: npm run build && node scripts/smoke.mjs
@@ -111,6 +111,7 @@ ok(text(w).includes('فیزیک'), 'exams tab shows the exam after navigation');
 click(w, findButton(w, 'امتحان جدید', '.exam-section-head button'));
 await tick();
 ok(!!w.document.querySelector('.modal input[type="date"]'), 'exam modal opens with a date field');
+ok(!w.document.querySelector('.modal textarea'), 'description field is no longer in the form');
 ok(w.document.querySelector('.modal')?.getAttribute('aria-modal') === 'true', 'modal exposes accessible dialog semantics');
 ok(w.document.body.style.overflow === 'hidden', 'background scroll is locked while a dialog is open');
 press(w, 'Escape');
@@ -141,23 +142,39 @@ ok(text(w).includes('میان‌برهای صفحه‌کلید'), 'keyboard shor
 click(w, w.document.querySelector('.settings-modal .close-button'));
 await tick();
 
-/* ---------- 5. completing plans ---------- */
-console.log('\nScenario 5: marking plans as done');
-w = await boot({ 'taghvim-plans': planSeed() });
-const check = w.document.querySelector('.plan-check');
-ok(!!check, 'each plan has a completion checkbox');
-ok(text(w).includes('از ۱ برنامه انجام شد') || text(w).includes('برنامه انجام شد'), 'weekly completion progress shown');
-click(w, check);
+/* ---------- 5. sub-tasks under plans ---------- */
+console.log('\nScenario 5: sub-tasks under plans');
+w = await boot({
+  'taghvim-plans': JSON.stringify([
+    { id: 'p1', title: 'ریاضی', day: 2, tasks: [{ id: 't1', title: 'تمرین ۱', done: '' }] },
+  ]),
+});
+ok(!w.document.querySelector('.plan-card-head .plan-check'), 'the plan itself is not checkable');
+ok(!w.document.querySelector('.task-list'), 'sub-tasks stay hidden until the plan is opened');
+ok(text(w).includes('زیرتسک'), 'weekly sub-task progress is shown');
+click(w, w.document.querySelector('.plan-main'));
 await tick();
-ok(w.document.querySelector('.plan-card')?.classList.contains('done'), 'plan is visually marked as done');
-ok(w.document.querySelector('.plan-check')?.getAttribute('aria-pressed') === 'true', 'checkbox state is exposed to assistive tech');
-ok(/"done":"\d{4}-\d{2}-\d{2}"/.test(w.localStorage.getItem('taghvim-plans') || ''), 'completion is stored per week (auto-resets next week)');
-click(w, w.document.querySelector('.plan-check'));
+ok(!!w.document.querySelector('.task-list li'), 'opening a plan reveals its sub-tasks');
+ok(!!w.document.querySelector('.task-add input'), 'opened plan shows a sub-task composer');
+click(w, w.document.querySelector('.task-check'));
 await tick();
-ok(!w.document.querySelector('.plan-card')?.classList.contains('done'), 'completion can be toggled back off');
+ok(w.document.querySelector('.task-list li')?.classList.contains('done'), 'sub-task can be marked done');
+ok(w.document.querySelector('.plan-card')?.classList.contains('done'), 'plan looks complete when every sub-task is done');
+ok(w.document.querySelector('.task-check')?.getAttribute('aria-pressed') === 'true', 'sub-task checkbox state is exposed to assistive tech');
+ok(/"done":"\d{4}-\d{2}-\d{2}"/.test(w.localStorage.getItem('taghvim-plans') || ''), 'sub-task completion is stored per week (auto-resets next week)');
+click(w, w.document.querySelector('.task-check'));
+await tick();
+ok(!w.document.querySelector('.plan-card')?.classList.contains('done'), 'sub-task completion can be toggled back off');
+
+type(w, w.document.querySelector('.task-add input'), 'تمرین صفحه ۱۲');
+await tick();
+w.document.querySelector('.task-add')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+await tick();
+ok(query(w, '.task-list li').length === 2 && text(w).includes('تمرین صفحه ۱۲'), 'a new sub-task can be added under the plan');
 
 click(w, w.document.querySelector('.plan-card .more-button'));
 await tick();
+ok(!findButton(w, 'انجام شد', '.menu button'), 'plan menu no longer has a whole-plan done action');
 ok(!!findButton(w, 'کپی', '.menu button'), 'plans can be duplicated from the menu');
 click(w, findButton(w, 'کپی', '.menu button'));
 await tick();
@@ -194,6 +211,7 @@ ok(text(w).includes('برنامه‌های این هفته'), '"1" jumps back to
 press(w, 'n');
 await tick();
 ok(!!w.document.querySelector('.modal'), '"N" opens the add dialog');
+ok(!w.document.querySelector('.modal textarea'), 'add dialog has no description field');
 press(w, 'Escape');
 await tick();
 ok(!w.document.querySelector('.modal'), 'Escape closes it again');

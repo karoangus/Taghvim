@@ -5,8 +5,8 @@
      2. corrupted localStorage (must never cause a permanent white screen)
      3. legacy data + navigation + exam modal
      4. settings, appearance, backup & restore controls
-     5. sub-tasks under plans (weekly progress that resets by itself)
-     6. plan descriptions + conditional description/task display
+     5. sub-tasks, custom stickers and weekly progress that resets by itself
+     6. plan stickers, descriptions + conditional description/task display
      7. search / filtering
      8. keyboard shortcuts + saved font scale
    Run: npm run build && node scripts/smoke.mjs
@@ -172,8 +172,20 @@ ok(text(w).includes('زیرتسک'), 'weekly sub-task progress is shown');
 click(w, w.document.querySelector('.plan-main'));
 await tick();
 ok(!!w.document.querySelector('.task-list li'), 'opening a plan reveals its sub-tasks');
-ok(w.document.querySelector('.task-number')?.textContent === '1️⃣', 'first sub-task has a numbered emoji sticker');
+ok(w.document.querySelector('.task-number')?.textContent === '1️⃣', 'first sub-task has a numbered emoji sticker by default');
 ok(!!w.document.querySelector('.task-add input'), 'opened plan shows a sub-task composer');
+click(w, w.document.querySelector('.task-number'));
+await tick();
+ok(!!w.document.querySelector('.sticker-picker.compact'), 'clicking a sub-task sticker opens its picker');
+click(w, findButton(w, '🎯', '.sticker-options button'));
+await tick();
+ok(w.document.querySelector('.task-number')?.textContent === '🎯', 'a custom sub-task sticker replaces the numbered emoji');
+ok(JSON.parse(w.localStorage.getItem('taghvim-plans') || '[]')[0]?.tasks[0]?.sticker === '🎯', 'custom sub-task sticker is persisted');
+click(w, w.document.querySelector('.task-number'));
+await tick();
+click(w, w.document.querySelector('.sticker-clear'));
+await tick();
+ok(w.document.querySelector('.task-number')?.textContent === '1️⃣', 'clearing a custom sticker restores the automatic number');
 click(w, w.document.querySelector('.task-check'));
 await tick();
 ok(w.document.querySelector('.task-list li')?.classList.contains('done'), 'sub-task can be marked done');
@@ -205,12 +217,25 @@ w = await boot();
 press(w, 'n');
 await tick();
 ok(!!w.document.querySelector('.modal textarea'), 'plan form offers an optional description field');
+ok(!!w.document.querySelector('.modal .sticker-picker'), 'plan form offers an optional sticker picker');
 type(w, w.document.querySelector('.modal input'), 'مرور فصل اول');
 type(w, w.document.querySelector('.modal textarea'), 'نکته‌های مهم فصل را مرور کن');
+type(w, w.document.querySelector('.modal .sticker-custom-field input'), '🌈');
 w.document.querySelector('.modal')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
 await tick();
 ok(w.document.querySelector('.plan-description')?.textContent === 'نکته‌های مهم فصل را مرور کن', 'saved plan description appears on its card');
-ok(JSON.parse(w.localStorage.getItem('taghvim-plans') || '[]')[0]?.description === 'نکته‌های مهم فصل را مرور کن', 'plan description is persisted');
+const savedPlan = JSON.parse(w.localStorage.getItem('taghvim-plans') || '[]')[0];
+ok(savedPlan?.description === 'نکته‌های مهم فصل را مرور کن', 'plan description is persisted');
+ok(savedPlan?.sticker === '🌈', 'custom plan sticker is persisted');
+const stickerPlanCard = findPlanCard(w, 'مرور فصل اول');
+ok(stickerPlanCard?.querySelector('.plan-sticker')?.textContent === '🌈', 'plan sticker is displayed large beside its title');
+click(w, stickerPlanCard?.querySelector('.more-button'));
+await tick();
+click(w, findButton(w, 'ویرایش', '.menu button'));
+await tick();
+ok(w.document.querySelector('.modal .sticker-custom-field input')?.value === '🌈', 'editing a plan keeps its selected sticker');
+click(w, w.document.querySelector('.modal .close-button'));
+await tick();
 
 w = await boot({
   'taghvim-plans': JSON.stringify([

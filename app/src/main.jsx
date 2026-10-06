@@ -35,6 +35,7 @@ const EXAMS_KEY = 'taghvim-exams';
 const THEME_KEY = 'taghvim-theme';
 const FONT_SCALE_KEY = 'taghvim-font-scale';
 const FONT_SCALE_OPTIONS = [0.9, 1, 1.1, 1.2];
+const stickerOptions = ['✨', '📚', '🧠', '✏️', '🎯', '💡', '🌱', '📝', '🎨', '💻', '🏃', '🎵', '🧪', '☕', '🏆', '🚀', '🔥', '📌', '🧩', '💪', '🌈', '❤️', '🌙', '⭐'];
 
 const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const faNumber = (value) => {
@@ -44,6 +45,11 @@ const faNumber = (value) => {
 const faDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
 /* ---------- normalisation: legacy/hand-edited data must never break the UI ---------- */
+function normalizeSticker(value) {
+  if (typeof value !== 'string') return '';
+  return Array.from(value.trim()).slice(0, 12).join('');
+}
+
 function normalizeTask(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const title = String(raw.title ?? raw.name ?? '').trim();
@@ -51,6 +57,7 @@ function normalizeTask(raw) {
   return {
     id: raw.id ? String(raw.id) : uid(),
     title: title.slice(0, 80),
+    sticker: normalizeSticker(raw.sticker),
     // "done" stores the week it was completed in, so it resets automatically every week.
     done: typeof raw.done === 'string' ? raw.done : '',
   };
@@ -69,6 +76,7 @@ function normalizePlan(raw) {
     id: raw.id ? String(raw.id) : uid(),
     title: title.slice(0, 80),
     description: String(raw.description ?? raw.desc ?? '').trim().slice(0, 500),
+    sticker: normalizeSticker(raw.sticker),
     day: Number.isFinite(day) ? Math.min(6, Math.max(0, Math.trunc(day))) : 0,
     time,
     color: typeof raw.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(raw.color) ? raw.color : planColors[0],
@@ -313,6 +321,57 @@ function useDialog(onClose) {
   return ref;
 }
 
+function StickerPicker({ value = '', onChange, onSelect, label, compact = false }) {
+  const sticker = normalizeSticker(value);
+  const chooseSticker = (nextSticker) => (onSelect || onChange)?.(nextSticker);
+
+  return (
+    <fieldset className={`sticker-picker ${compact ? 'compact' : ''}`}>
+      <legend>{label}</legend>
+      {!compact && (
+        <div className="sticker-preview-row">
+          <span className="sticker-preview-label">{sticker ? 'پیش‌نمایش' : 'اختیاری'}</span>
+          <span className="sticker-preview" aria-hidden="true">{sticker || '＋'}</span>
+        </div>
+      )}
+      <div className="sticker-options" aria-label="استیکرهای پیشنهادی">
+        {stickerOptions.map((option) => (
+          <button
+            key={option}
+            className={sticker === option ? 'selected' : ''}
+            type="button"
+            aria-label={`انتخاب استیکر ${option}`}
+            aria-pressed={sticker === option}
+            title={option}
+            onClick={() => chooseSticker(option)}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+      <div className="sticker-custom-row">
+        <label className="sticker-custom-field">
+          <span>ایموجی دلخواه</span>
+          <input
+            type="text"
+            maxLength={24}
+            value={sticker}
+            onChange={(event) => onChange?.(normalizeSticker(event.target.value))}
+            placeholder="اینجا انتخاب یا جای‌گذاری کن"
+            aria-label={`${label} دلخواه`}
+          />
+        </label>
+        {sticker && (
+          <button className="sticker-clear" type="button" onClick={() => chooseSticker('')} aria-label={`حذف ${label}`}>
+            پاک کردن
+          </button>
+        )}
+      </div>
+      {!compact && <small className="sticker-hint">می‌توانی از استیکرهای بالا انتخاب کنی یا ایموجی دلخواهت را وارد کنی.</small>}
+    </fieldset>
+  );
+}
+
 function Modal({ data, onClose, onPlan, onExam }) {
   const isExam = data.type === 'exam';
   const isEditing = Boolean(data.id);
@@ -325,6 +384,7 @@ function Modal({ data, onClose, onPlan, onExam }) {
     date: data.date || toInput(new Date()),
     time: data.time || '',
     color: data.color || planColors[(data.day ?? 0) % planColors.length],
+    sticker: normalizeSticker(data.sticker),
     description: String(data.description ?? data.desc ?? ''),
   });
 
@@ -357,6 +417,7 @@ function Modal({ data, onClose, onPlan, onExam }) {
               day: Number(value.day),
               time: value.time,
               color: value.color,
+              sticker: value.sticker,
               description: value.description.trim(),
             });
           }
@@ -412,6 +473,14 @@ function Modal({ data, onClose, onPlan, onExam }) {
             placeholder={isExam ? 'نکته‌ها یا جزئیات این امتحان را بنویس…' : 'نکته‌ها یا جزئیات این برنامه را بنویس…'}
           />
         </label>
+
+        {!isExam && (
+          <StickerPicker
+            label="استیکر برنامه"
+            value={value.sticker}
+            onChange={(sticker) => setValue((current) => ({ ...current, sticker }))}
+          />
+        )}
 
         {!isExam && (
           <fieldset className="color-field">
@@ -584,8 +653,9 @@ function SettingsPanel({
   );
 }
 
-function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove }) {
+function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange }) {
   const [draft, setDraft] = useState('');
+  const [stickerTaskId, setStickerTaskId] = useState(null);
   const canAdd = draft.trim().length > 0 && plan.tasks.length < 40;
 
   return (
@@ -594,28 +664,53 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove }) {
         <ul className="task-list">
           {plan.tasks.map((task, index) => {
             const isDone = task.done === thisWeek;
+            const displayedSticker = task.sticker || taskSticker(index);
             return (
-              <li key={task.id} className={isDone ? 'done' : ''}>
-                <button
-                  className="plan-check task-check"
-                  type="button"
-                  aria-pressed={isDone}
-                  aria-label={`${isDone ? 'برگرداندن' : 'انجام شد'}: ${task.title}`}
-                  title={isDone ? 'انجام‌نشده کن' : 'انجام شد'}
-                  onClick={() => onToggle(plan.id, task.id)}
-                >
-                  {isDone && <Check size={11} strokeWidth={3.4} />}
-                </button>
-                <span className="task-number" aria-hidden="true">{taskSticker(index)}</span>
-                <span className="task-title">{task.title}</span>
-                <button
-                  className="task-delete"
-                  type="button"
-                  aria-label={`حذف ${task.title}`}
-                  onClick={() => onRemove(plan.id, task.id)}
-                >
-                  <X size={12} />
-                </button>
+              <li key={task.id} className={`task-item ${isDone ? 'done' : ''}`}>
+                <div className="task-row">
+                  <button
+                    className="plan-check task-check"
+                    type="button"
+                    aria-pressed={isDone}
+                    aria-label={`${isDone ? 'برگرداندن' : 'انجام شد'}: ${task.title}`}
+                    title={isDone ? 'انجام‌نشده کن' : 'انجام شد'}
+                    onClick={() => onToggle(plan.id, task.id)}
+                  >
+                    {isDone && <Check size={11} strokeWidth={3.4} />}
+                  </button>
+                  <button
+                    className={`task-number ${task.sticker ? 'custom' : ''}`}
+                    type="button"
+                    aria-label={`${task.sticker ? 'تغییر' : 'انتخاب'} استیکر زیرتسک ${task.title}`}
+                    aria-expanded={stickerTaskId === task.id}
+                    aria-haspopup="true"
+                    title="برای تغییر استیکر کلیک کن"
+                    onClick={() => setStickerTaskId((current) => (current === task.id ? null : task.id))}
+                  >
+                    {displayedSticker}
+                  </button>
+                  <span className="task-title">{task.title}</span>
+                  <button
+                    className="task-delete"
+                    type="button"
+                    aria-label={`حذف ${task.title}`}
+                    onClick={() => onRemove(plan.id, task.id)}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+                {stickerTaskId === task.id && (
+                  <StickerPicker
+                    compact
+                    label={`استیکر زیرتسک ${task.title}`}
+                    value={task.sticker}
+                    onChange={(sticker) => onStickerChange(plan.id, task.id, sticker)}
+                    onSelect={(sticker) => {
+                      onStickerChange(plan.id, task.id, sticker);
+                      setStickerTaskId(null);
+                    }}
+                  />
+                )}
               </li>
             );
           })}
@@ -879,8 +974,17 @@ function App() {
     if (!text) return;
     setPlans((items) => items.map((plan) => {
       if (plan.id !== planId || plan.tasks.length >= 40) return plan;
-      return { ...plan, tasks: [...plan.tasks, { id: uid(), title: text, done: '' }] };
+      return { ...plan, tasks: [...plan.tasks, { id: uid(), title: text, sticker: '', done: '' }] };
     }));
+  }
+
+  function updateTaskSticker(planId, taskId, sticker) {
+    const nextSticker = normalizeSticker(sticker);
+    setPlans((items) => items.map((plan) => (
+      plan.id !== planId
+        ? plan
+        : { ...plan, tasks: plan.tasks.map((task) => (task.id === taskId ? { ...task, sticker: nextSticker } : task)) }
+    )));
   }
 
   function toggleTask(planId, taskId) {
@@ -956,7 +1060,7 @@ function App() {
   }
 
   function exportData() {
-    const payload = JSON.stringify({ app: 'taghvim', version: 5, exportedAt: new Date().toISOString(), plans, exams }, null, 2);
+    const payload = JSON.stringify({ app: 'taghvim', version: 6, exportedAt: new Date().toISOString(), plans, exams }, null, 2);
     const okFile = downloadFile(`taghvim-backup-${toInput(new Date())}.json`, payload, 'application/json');
     notify(okFile ? 'فایل پشتیبان آماده شد' : 'دریافت فایل در این مرورگر ممکن نشد');
   }
@@ -1175,6 +1279,7 @@ function App() {
                                 aria-expanded={isOpen}
                                 onClick={() => setExpandedPlan(isOpen ? null : plan.id)}
                               >
+                                {plan.sticker && <span className="plan-sticker" aria-hidden="true">{plan.sticker}</span>}
                                 <b>{plan.title}</b>
                               </button>
                               <button
@@ -1202,6 +1307,7 @@ function App() {
                                 onToggle={toggleTask}
                                 onAdd={addTask}
                                 onRemove={removeTask}
+                                onStickerChange={updateTaskSticker}
                               />
                             )}
                             {menu === plan.id && (

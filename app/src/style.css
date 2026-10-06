@@ -1321,6 +1321,222 @@ main {
   margin-top: 7px;
 }
 
+/* ---------- search + section tools ---------- */
+.head-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  position: relative;
+  min-width: 200px;
+  height: 38px;
+  padding: 0 11px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  transition: border-color 150ms ease;
+}
+
+.search-box:focus-within {
+  border-color: color-mix(in srgb, var(--brand) 50%, var(--line));
+}
+
+.search-box > svg {
+  flex: 0 0 auto;
+}
+
+.search-box input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  font-size: 10px;
+  outline: none;
+  appearance: none;
+}
+
+.search-box input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-clear {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border-radius: 7px;
+}
+
+.search-clear:hover {
+  color: var(--danger);
+}
+
+/* ---------- plan card: completion + accessible hit targets ---------- */
+.plan-card {
+  cursor: default;
+}
+
+.plan-check {
+  width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: transparent;
+  background: var(--surface);
+  border: 1.5px solid color-mix(in srgb, var(--plan-color) 45%, var(--line-strong));
+  border-radius: 6px;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.plan-check:hover {
+  border-color: var(--plan-color);
+  background: color-mix(in srgb, var(--plan-color) 14%, var(--surface));
+}
+
+.plan-check[aria-pressed='true'] {
+  color: #fff;
+  background: var(--plan-color);
+  border-color: var(--plan-color);
+}
+
+.plan-main {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  background: transparent;
+  text-align: start;
+}
+
+.plan-main b {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.plan-card.done {
+  opacity: 0.62;
+}
+
+.plan-card.done .plan-main b {
+  color: var(--text-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.day-dot {
+  width: 4px;
+  height: 4px;
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  background: currentColor;
+  border-radius: 50%;
+  opacity: 0.85;
+}
+
+.mobile-day-picker button {
+  position: relative;
+}
+
+/* ---------- settings: backup, restore, danger zone, shortcuts ---------- */
+.setting-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.setting-buttons .button {
+  width: 100%;
+}
+
+.wide-setting-button {
+  width: 100%;
+  margin-top: 7px;
+}
+
+.file-input {
+  display: none;
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button.danger-button {
+  color: #fff;
+  background: var(--danger);
+}
+
+.button.danger-button:hover {
+  filter: brightness(0.94);
+}
+
+.danger-setting {
+  border-color: color-mix(in srgb, var(--danger) 25%, var(--line));
+}
+
+.shortcut-setting .setting-copy b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.shortcut-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shortcut-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 9px;
+}
+
+.shortcut-list li span {
+  margin-inline-start: auto;
+}
+
+.shortcut-list kbd {
+  min-width: 21px;
+  padding: 3px 5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 8px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.char-count {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 8px;
+  text-align: start;
+}
+
 @keyframes fade-in {
   from { opacity: 0; }
 }
@@ -1846,5 +2062,35 @@ main {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- responsive tweaks for the new search / tools row ---------- */
+@media (max-width: 720px) {
+  .section-head {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .head-tools {
+    flex: 1 1 100%;
+    order: 3;
+    gap: 8px;
+    margin-top: 2px;
+  }
+
+  .search-box {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 36px;
+  }
+
+  .week-progress {
+    flex: 0 0 auto;
+    width: 105px;
+  }
+
+  .setting-buttons {
+    grid-template-columns: 1fr;
   }
 }

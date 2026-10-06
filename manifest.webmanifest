@@ -1,14 +1,20 @@
 {
-  "name": "Taghvim",
+  "id": "/Taghvim/",
+  "name": "تقویم | Taghvim",
   "short_name": "تقویم",
+  "description": "برنامه‌ریزی هفتگی و شمارش معکوس امتحان‌ها — سبک، آفلاین و فارسی",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait-primary",
   "background_color": "#f5f6fa",
   "theme_color": "#282549",
   "lang": "fa",
   "dir": "rtl",
+  "categories": ["productivity", "education", "utilities"],
   "icons": [
-    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
   ]
 }

@@ -148,13 +148,13 @@ summary:focus-visible {
 }
 
 .brand-copy b {
-  font-size: 1.0625rem;
+  font-size: 1.1875rem;
   line-height: 1.2;
 }
 
 .brand-copy small {
   color: var(--muted);
-  font-size: 0.625rem;
+  font-size: 0.75rem;
 }
 
 .top-nav {
@@ -645,8 +645,8 @@ main {
   min-width: 0;
   flex: 1;
   overflow-wrap: anywhere;
-  font-size: 0.6875rem;
-  line-height: 1.7;
+  font-size: 0.8125rem;
+  line-height: 1.6;
 }
 
 .more-button {
@@ -679,13 +679,13 @@ main {
   align-items: center;
   gap: 4px;
   color: var(--plan-color);
-  font-size: 0.5rem;
+  font-size: 0.625rem;
   font-weight: 700;
 }
 
 .task-count {
   color: var(--text-soft);
-  font-size: 0.5rem;
+  font-size: 0.625rem;
   font-weight: 700;
 }
 
@@ -694,8 +694,8 @@ main {
   margin: 7px 0 0;
   overflow: hidden;
   color: var(--text-soft);
-  font-size: 0.5625rem;
-  line-height: 1.8;
+  font-size: 0.6875rem;
+  line-height: 1.75;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   -webkit-box-orient: vertical;
@@ -1501,8 +1501,8 @@ main {
 .plan-main b {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 0.6875rem;
-  line-height: 1.7;
+  font-size: 0.8125rem;
+  line-height: 1.6;
 }
 
 .plan-card.done {
@@ -1542,13 +1542,13 @@ main {
   min-width: 0;
   flex: 1;
   overflow-wrap: anywhere;
-  font-size: 0.625rem;
-  line-height: 1.6;
+  font-size: 0.75rem;
+  line-height: 1.55;
 }
 
 .task-list li .task-number {
   flex: 0 0 auto;
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   line-height: 1.3;
 }
 
@@ -1597,7 +1597,7 @@ main {
   border: 1px solid var(--line);
   border-radius: 8px;
   outline: none;
-  font-size: 0.5625rem;
+  font-size: 0.6875rem;
 }
 
 .task-add input:focus {
@@ -1776,7 +1776,7 @@ main {
   }
 
   .brand-copy b {
-    font-size: 0.9375rem;
+    font-size: 1.0625rem;
   }
 
   .brand-copy small,
@@ -2005,18 +2005,18 @@ main {
     padding: 12px 12px 12px 15px;
   }
 
-  .plan-card-head > b {
-    font-size: 0.75rem;
+  .plan-main b {
+    font-size: 0.875rem;
   }
 
   .plan-time,
   .plan-card p,
   .task-add input {
-    font-size: 0.625rem;
+    font-size: 0.75rem;
   }
 
   .task-list li .task-title {
-    font-size: 0.6875rem;
+    font-size: 0.8125rem;
   }
 
   .day-empty {
@@ -2346,7 +2346,7 @@ main {
   background: transparent;
   border: 0;
   border-radius: 7px;
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   line-height: 1.3;
   transition: background 140ms ease;
 }
@@ -2357,7 +2357,7 @@ main {
 }
 
 .task-list li .task-number.custom {
-  font-size: 1.0625rem;
+  font-size: 1.1875rem;
 }
 
 .sticker-picker {

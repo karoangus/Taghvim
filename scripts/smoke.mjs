@@ -130,6 +130,7 @@ ok(w.document.body.style.overflow !== 'hidden', 'scroll lock is released again')
 
 /* ---------- 4. settings + appearance + data tools ---------- */
 console.log('\nScenario 4: settings, appearance and data tools');
+w = await boot({ 'taghvim-plans': planSeed() });
 click(w, w.document.querySelector('.icon-button[aria-label="تنظیمات"]'));
 await tick();
 ok(text(w).includes('تنظیمات تقویم'), 'settings panel opens');

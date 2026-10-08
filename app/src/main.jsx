@@ -2,6 +2,8 @@ import React, { Component, useCallback, useEffect, useMemo, useRef, useState } f
 import { createRoot } from 'react-dom/client';
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   BellRing,
   BookOpenCheck,
   CalendarDays,
@@ -71,6 +73,9 @@ function normalizePlan(raw) {
   if (!title) return null;
   const day = Number(raw.day);
   const time = typeof raw.time === 'string' && /^\d{1,2}:\d{2}$/.test(raw.time) ? raw.time : '';
+  const rawOrder = typeof raw.order === 'number' || (typeof raw.order === 'string' && raw.order.trim() !== '')
+    ? Number(raw.order)
+    : Number.NaN;
   const tasks = Array.isArray(raw.tasks)
     ? raw.tasks.map(normalizeTask).filter(Boolean).slice(0, 40)
     : [];
@@ -82,6 +87,8 @@ function normalizePlan(raw) {
     day: Number.isFinite(day) ? Math.min(6, Math.max(0, Math.trunc(day))) : 0,
     time,
     color: typeof raw.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(raw.color) ? raw.color : planColors[0],
+    // Manual position inside the day. Missing for legacy data; filled in by loadPlans().
+    order: Number.isFinite(rawOrder) && rawOrder >= 0 ? Math.trunc(rawOrder) : undefined,
     tasks,
   };
 }
@@ -107,6 +114,53 @@ function taskSticker(index) {
 
 function isPlanComplete(plan, weekKey) {
   return plan.tasks.length > 0 && plan.tasks.every((task) => task.done === weekKey);
+}
+
+/* ---------- manual order inside a day ----------
+   Every plan has an integer `order` that is unique within its day. The week view sorts by
+   (completed last, then order). Legacy plans without `order` are ordered by time once,
+   when their day is first loaded, so the old default is kept until the user moves something. */
+const timeKey = (plan) => (plan.time ? plan.time.padStart(5, '0') : '99:99');
+
+function compareDisplayOrder(a, b, weekKey) {
+  const aDone = isPlanComplete(a, weekKey) ? 1 : 0;
+  const bDone = isPlanComplete(b, weekKey) ? 1 : 0;
+  if (aDone !== bDone) return aDone - bDone;
+  return (a.order ?? 0) - (b.order ?? 0);
+}
+
+/* Gives every plan of `day` a sequential order. Keeps existing orders when they are complete. */
+function withDayOrder(items, day) {
+  const dayItems = items.filter((item) => Number(item.day) === day);
+  if (dayItems.every((item) => Number.isInteger(item.order))) return items;
+  const ids = [...dayItems].sort((a, b) => timeKey(a).localeCompare(timeKey(b))).map((item) => item.id);
+  return writeDayOrder(items, day, ids);
+}
+
+/* Writes order = position for the plans of `day` listed in `ids`. */
+function writeDayOrder(items, day, ids) {
+  return items.map((item) => {
+    if (Number(item.day) !== day || !ids.includes(item.id)) return item;
+    return { ...item, order: ids.indexOf(item.id) };
+  });
+}
+
+/* Adds a new plan (or a plan moved to another day) at its time position inside that day. */
+function placeInDay(items, plan) {
+  const day = Number(plan.day);
+  const base = withDayOrder(items, day).concat([{ ...plan, order: 0 }]);
+  const ids = base
+    .filter((item) => Number(item.day) === day && item.id !== plan.id)
+    .sort((a, b) => a.order - b.order);
+  const at = ids.findIndex((item) => timeKey(item) > timeKey(plan));
+  const orderedIds = ids.map((item) => item.id);
+  orderedIds.splice(at < 0 ? orderedIds.length : at, 0, plan.id);
+  return writeDayOrder(base, day, orderedIds);
+}
+
+function loadPlans() {
+  const plans = loadList(PLANS_KEY, normalizePlan);
+  return [0, 1, 2, 3, 4, 5, 6].reduce((items, day) => withDayOrder(items, day), plans);
 }
 
 /* ---------- storage: blocked or old storage must never break the app ---------- */
@@ -765,7 +819,7 @@ function EmptyState({ type, onAdd, searching }) {
 
 function App() {
   const [tab, setTab] = useState('week');
-  const [plans, setPlans] = useState(() => loadList(PLANS_KEY, normalizePlan));
+  const [plans, setPlans] = useState(loadPlans);
   const [exams, setExams] = useState(() => loadList(EXAMS_KEY, normalizeExam));
   const [now, setNow] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(() => dayIndex(new Date()));
@@ -811,7 +865,7 @@ function App() {
   /* Stay in sync when the app is open in another tab or window. */
   useEffect(() => {
     const onStorage = (event) => {
-      if (event.key === PLANS_KEY) setPlans(loadList(PLANS_KEY, normalizePlan));
+      if (event.key === PLANS_KEY) setPlans(loadPlans());
       if (event.key === EXAMS_KEY) setExams(loadList(EXAMS_KEY, normalizeExam));
       if (event.key === THEME_KEY) setTheme(loadTheme());
       if (event.key === FONT_SCALE_KEY) setFontScale(loadFontScale());
@@ -971,9 +1025,17 @@ function App() {
     const editing = Boolean(data.id);
     const plan = normalizePlan(data);
     if (!plan) return;
-    setPlans((items) => (editing
-      ? items.map((item) => (item.id === data.id ? { ...item, ...plan, id: item.id, tasks: item.tasks } : item))
-      : [...items, plan]));
+    setPlans((items) => {
+      if (!editing) return placeInDay(items, plan);
+      const current = items.find((item) => item.id === data.id);
+      if (!current) return items;
+      const merged = { ...current, ...plan, id: current.id, tasks: current.tasks, order: current.order };
+      if (Number(current.day) === plan.day) {
+        return items.map((item) => (item.id === data.id ? merged : item));
+      }
+      // Moved to another day: it takes its time position there.
+      return placeInDay(items.filter((item) => item.id !== data.id), merged);
+    });
     setModal(null);
     setSelectedDay(plan.day);
     notify(editing ? 'تغییرات برنامه ذخیره شد' : 'برنامه به هفته‌ات اضافه شد');
@@ -1026,14 +1088,34 @@ function App() {
     )));
   }
 
+  /* Swaps the position with the neighbour above/below inside the same day (and same completed group). */
+  function movePlan(id, direction) {
+    setPlans((items) => {
+      const plan = items.find((item) => item.id === id);
+      if (!plan) return items;
+      const day = Number(plan.day);
+      const list = items
+        .filter((item) => Number(item.day) === day)
+        .sort((a, b) => compareDisplayOrder(a, b, thisWeek));
+      const neighbour = list[list.indexOf(plan) + direction];
+      if (!neighbour || isPlanComplete(neighbour, thisWeek) !== isPlanComplete(plan, thisWeek)) return items;
+      return items.map((item) => {
+        if (item.id === plan.id) return { ...item, order: neighbour.order };
+        if (item.id === neighbour.id) return { ...item, order: plan.order };
+        return item;
+      });
+    });
+    setMenu(null);
+  }
+
   function duplicatePlan(id) {
     const source = plans.find((plan) => plan.id === id);
     if (!source) return;
-    setPlans((items) => [...items, {
+    setPlans((items) => placeInDay(items, {
       ...source,
       id: uid(),
       tasks: source.tasks.map((task) => ({ ...task, id: uid(), done: '' })),
-    }]);
+    }));
     setMenu(null);
     notify('یک کپی از برنامه ساخته شد');
   }
@@ -1111,11 +1193,11 @@ function App() {
         notify('همه موارد این پشتیبان از قبل موجود بودند');
         return;
       }
-      setPlans((items) => [...items, ...addedPlans.map((plan) => ({
+      setPlans((items) => addedPlans.reduce((current, plan) => placeInDay(current, {
         ...plan,
         id: uid(),
         tasks: plan.tasks.map((task) => ({ ...task, id: uid() })),
-      }))]);
+      }), items));
       setExams((items) => [...items, ...addedExams.map((exam) => ({ ...exam, id: uid() }))]);
       setSettingsOpen(false);
       notify(
@@ -1323,12 +1405,7 @@ function App() {
               {week.map((day) => {
                 const dayPlans = visiblePlans
                   .filter((plan) => Number(plan.day) === day.index)
-                  .sort((a, b) => {
-                    const aDone = isPlanComplete(a, thisWeek) ? 1 : 0;
-                    const bDone = isPlanComplete(b, thisWeek) ? 1 : 0;
-                    if (aDone !== bDone) return aDone - bDone;
-                    return (a.time || '99:99').localeCompare(b.time || '99:99');
-                  });
+                  .sort((a, b) => compareDisplayOrder(a, b, thisWeek));
                 return (
                   <article className={`day-column ${day.today ? 'today' : ''} ${selectedDay === day.index ? 'mobile-selected' : ''}`} key={day.name}>
                     <div className="day-head">
@@ -1341,10 +1418,15 @@ function App() {
                     </div>
 
                     <div className="plan-list">
-                      {dayPlans.map((plan) => {
+                      {dayPlans.map((plan, position) => {
                         const isOpen = expandedPlan === plan.id;
                         const doneCount = plan.tasks.filter((task) => task.done === thisWeek).length;
                         const isDone = isPlanComplete(plan, thisWeek);
+                        /* Moving is only offered when the list is not filtered by search. */
+                        const neighbourAbove = dayPlans[position - 1];
+                        const neighbourBelow = dayPlans[position + 1];
+                        const canMoveUp = !needle && Boolean(neighbourAbove) && isPlanComplete(neighbourAbove, thisWeek) === isDone;
+                        const canMoveDown = !needle && Boolean(neighbourBelow) && isPlanComplete(neighbourBelow, thisWeek) === isDone;
                         return (
                           <article
                             className={`plan-card ${isOpen ? 'expanded' : ''} ${isDone ? 'done' : ''}`}
@@ -1393,6 +1475,8 @@ function App() {
                             {menu === plan.id && (
                               <div className="menu" role="menu" onClick={(event) => event.stopPropagation()}>
                                 <button role="menuitem" onClick={() => { setModal({ ...plan, type: 'plan' }); setMenu(null); }}><Edit3 size={15} />ویرایش</button>
+                                <button role="menuitem" onClick={() => movePlan(plan.id, -1)} disabled={!canMoveUp} title={needle ? 'برای جابه‌جایی، جست‌وجو را پاک کن' : undefined}><ArrowUp size={15} />بالا بردن</button>
+                                <button role="menuitem" onClick={() => movePlan(plan.id, 1)} disabled={!canMoveDown} title={needle ? 'برای جابه‌جایی، جست‌وجو را پاک کن' : undefined}><ArrowDown size={15} />پایین بردن</button>
                                 <button role="menuitem" onClick={() => duplicatePlan(plan.id)}><Copy size={15} />کپی</button>
                                 <button role="menuitem" className="danger" onClick={() => removePlan(plan.id)}><Trash2 size={15} />حذف</button>
                               </div>

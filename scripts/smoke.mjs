@@ -9,6 +9,7 @@
      6. plan stickers, descriptions + conditional description/task display
      7. search / filtering
      8. keyboard shortcuts + saved font scale
+     9. moving plans up/down inside their day (order persists, done plans stay last)
    Run: npm run build && node scripts/smoke.mjs
 */
 import { readFileSync, readdirSync } from 'node:fs';
@@ -308,6 +309,108 @@ ok(!!w.document.querySelector('.modal textarea'), 'plan dialog includes an optio
 press(w, 'Escape');
 await tick();
 ok(!w.document.querySelector('.modal'), 'Escape closes it again');
+
+/* ---------- 9. moving plans inside their day ---------- */
+console.log('\nScenario 9: move plans up/down inside their day');
+const weekKeyNow = (() => {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - ((start.getDay() + 1) % 7)); // Saturday = week start
+  return toInputDate(start);
+})();
+function toInputDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+/* Titles of the plans in one day column, in the order they are shown. */
+const dayTitles = (w, index) => [...query(w, '.day-column')[index].querySelectorAll('.plan-main b')].map((node) => node.textContent);
+const dayCards = (w, index) => [...query(w, '.day-column')[index].querySelectorAll('.plan-card')];
+const cardOf = (w, index, title) => dayCards(w, index).find((card) => card.querySelector('.plan-main b')?.textContent === title);
+const openMenuOf = (w, card) => { click(w, card.querySelector('.more-button')); return w.document.querySelector('.menu'); };
+/* Opens a card's ⋯ menu and clicks one of its items once React has rendered it. */
+async function pickFromMenu(w, card, label) {
+  click(w, card.querySelector('.more-button'));
+  await tick();
+  click(w, findButton(w, label, '.menu button'));
+  await tick();
+}
+
+w = await boot({
+  'taghvim-plans': JSON.stringify([
+    { id: 'm1', title: 'صبح', day: 2, time: '08:00' },
+    { id: 'm2', title: 'ظهر', day: 2, time: '12:00' },
+    { id: 'm3', title: 'عصر', day: 2, time: '16:00' },
+    { id: 'm4', title: 'دیگر', day: 3, time: '09:00' },
+    { id: 'm5', title: 'کامل', day: 2, time: '07:00', tasks: [{ id: 't', title: 'کار', done: weekKeyNow }] },
+  ]),
+});
+ok(dayTitles(w, 2).join('|') === 'صبح|ظهر|عصر|کامل', 'legacy plans start in time order, completed plan last');
+openMenuOf(w, cardOf(w, 2, 'صبح'));
+await tick();
+ok(findButton(w, 'بالا بردن', '.menu button')?.disabled === true, 'first plan of the day cannot move up');
+ok(findButton(w, 'پایین بردن', '.menu button')?.disabled === false, 'first plan of the day can move down');
+click(w, findButton(w, 'پایین بردن', '.menu button'));
+await tick();
+ok(dayTitles(w, 2).join('|') === 'ظهر|صبح|عصر|کامل', 'moving a plan down swaps it with the next one');
+ok(!w.document.querySelector('.menu'), 'menu closes after a move');
+
+openMenuOf(w, cardOf(w, 2, 'عصر'));
+await tick();
+click(w, findButton(w, 'بالا بردن', '.menu button'));
+await tick();
+ok(dayTitles(w, 2).join('|') === 'ظهر|عصر|صبح|کامل', 'moving a plan up swaps it with the previous one');
+ok(dayTitles(w, 3).join('|') === 'دیگر', 'other days are not touched by moves');
+
+const stored = JSON.parse(w.localStorage.getItem('taghvim-plans') || '[]');
+const dayTwoStored = stored.filter((plan) => plan.day === 2);
+ok(new Set(dayTwoStored.map((plan) => plan.order)).size === dayTwoStored.length, 'every plan of the day has a unique stored order');
+ok(stored.find((plan) => plan.title === 'دیگر')?.order === 0, 'a day with one plan keeps its own order numbering');
+
+openMenuOf(w, cardOf(w, 2, 'کامل'));
+await tick();
+ok(findButton(w, 'بالا بردن', '.menu button')?.disabled === true, 'a completed plan cannot be moved above the active plans');
+ok(findButton(w, 'پایین بردن', '.menu button')?.disabled === true, 'a completed plan at the bottom cannot move down');
+click(w, w.document.body);
+await tick();
+
+/* The manual order survives a reload. */
+w = await boot({ 'taghvim-plans': w.localStorage.getItem('taghvim-plans') });
+ok(dayTitles(w, 2).join('|') === 'ظهر|عصر|صبح|کامل', 'manual order survives a reload');
+
+/* Search hides the move actions: they only make sense on the full list. */
+type(w, w.document.querySelector('.search-box input'), 'ظهر');
+await tick();
+openMenuOf(w, cardOf(w, 2, 'ظهر'));
+await tick();
+ok(findButton(w, 'پایین بردن', '.menu button')?.disabled === true && findButton(w, 'بالا بردن', '.menu button')?.disabled === true, 'move actions are disabled while searching');
+click(w, w.document.body);
+click(w, w.document.querySelector('.search-clear'));
+await tick();
+
+/* A new plan lands at its time position inside the day. Time order: 07:00 … 12:00 … */
+press(w, 'n');
+await tick();
+type(w, w.document.querySelector('.modal input'), 'مرور تازه');
+const daySelect = w.document.querySelector('.modal select');
+daySelect.value = '2';
+daySelect.dispatchEvent(new w.Event('change', { bubbles: true }));
+type(w, w.document.querySelector('.modal input[type="time"]'), '10:30');
+w.document.querySelector('.modal')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+await tick();
+ok(dayTitles(w, 2).join('|') === 'مرور تازه|ظهر|عصر|صبح|کامل', 'new plan is inserted before the first later-starting plan (10:30 before 12:00)');
+
+/* A duplicate is placed by its time as well (right after 12:00, before 16:00). */
+await pickFromMenu(w, cardOf(w, 2, 'ظهر'), 'کپی');
+ok(dayTitles(w, 2).join('|') === 'مرور تازه|ظهر|ظهر|عصر|صبح|کامل', 'duplicated plan is placed by its time position');
+
+/* Editing a plan to another day moves it to that day at its time position. */
+await pickFromMenu(w, cardOf(w, 2, 'صبح'), 'ویرایش');
+const editDay = w.document.querySelector('.modal select');
+editDay.value = '3';
+editDay.dispatchEvent(new w.Event('change', { bubbles: true }));
+w.document.querySelector('.modal')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+await tick();
+ok(!dayTitles(w, 2).includes('صبح') && dayTitles(w, 3).join('|') === 'صبح|دیگر', 'a plan edited to another day takes its time position there');
+ok(dayTitles(w, 2).join('|') === 'مرور تازه|ظهر|ظهر|عصر|کامل', 'the rest of the source day keeps its order');
 
 console.log(failures ? `\n❌ ${failures} check(s) FAILED` : '\n✅ ALL CHECKS PASSED — app boots and works');
 process.exit(failures ? 1 : 0);

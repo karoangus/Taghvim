@@ -3219,3 +3219,11 @@ main {
   padding: 4px 7px;
   font-size: 0.5rem;
 }
+
+/* Disabled move actions (first/last plan of a day). Declared after :hover so it wins. */
+.menu button:disabled {
+  color: var(--text-soft);
+  background: transparent;
+  opacity: 0.45;
+  cursor: not-allowed;
+}

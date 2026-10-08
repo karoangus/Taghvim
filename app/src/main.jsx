@@ -1,6 +1,7 @@
 import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  AlertTriangle,
   BellRing,
   BookOpenCheck,
   CalendarDays,
@@ -12,6 +13,7 @@ import {
   Copy,
   Download,
   Edit3,
+  Flame,
   Keyboard,
   Monitor,
   Moon,
@@ -797,21 +799,7 @@ function App() {
     };
   }, []);
 
-  /* Appearance: apply the resolved theme to the document and the browser UI colour. */
-  useEffect(() => {
-    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
-    const applyTheme = () => {
-      const resolved = theme === 'auto' ? (media?.matches ? 'dark' : 'light') : theme;
-      document.documentElement.dataset.theme = resolved;
-      document.documentElement.style.colorScheme = resolved;
-      const meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.setAttribute('content', resolved === 'dark' ? '#15151e' : '#282549');
-    };
-    applyTheme();
-    try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ }
-    media?.addEventListener?.('change', applyTheme);
-    return () => media?.removeEventListener?.('change', applyTheme);
-  }, [theme]);
+  /* Appearance (without alert level — final version defined further down). */
 
   /* Scale all rem-based text and persist the choice across visits. */
   useEffect(() => {
@@ -898,8 +886,41 @@ function App() {
   const allTasks = useMemo(() => plans.flatMap((plan) => plan.tasks), [plans]);
   const doneTasks = useMemo(() => allTasks.filter((task) => task.done === thisWeek).length, [allTasks, thisWeek]);
   const donePercent = allTasks.length ? Math.round((doneTasks / allTasks.length) * 100) : 0;
-  const tomorrow = upcoming.find((exam) => daysUntil(exam.date, now) === 1);
   const nextExam = upcoming[0];
+  const nextDaysLeft = nextExam ? daysUntil(nextExam.date, now) : Number.POSITIVE_INFINITY;
+  /* Alert level drives a global "exam is near" theme change so the user can't miss it. */
+  const alertLevel = !nextExam
+    ? null
+    : nextDaysLeft <= 0
+      ? 'critical'
+      : nextDaysLeft <= 3
+        ? 'urgent'
+        : nextDaysLeft <= 7
+          ? 'soon'
+          : null;
+  const alertExam = alertLevel ? nextExam : null;
+  const tomorrow = upcoming.find((exam) => daysUntil(exam.date, now) === 1);
+
+  /* Appearance: apply the resolved theme, browser UI colour, and exam-alert accent. */
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const resolved = theme === 'auto' ? (media?.matches ? 'dark' : 'light') : theme;
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.style.colorScheme = resolved;
+      const meta = document.querySelector('meta[name="theme-color"]');
+      let color = resolved === 'dark' ? '#15151e' : '#282549';
+      if (alertLevel === 'critical') color = resolved === 'dark' ? '#4a1a22' : '#8a2334';
+      else if (alertLevel === 'urgent') color = resolved === 'dark' ? '#4a2c18' : '#a1501d';
+      else if (alertLevel === 'soon') color = resolved === 'dark' ? '#3f2f19' : '#86681f';
+      if (meta) meta.setAttribute('content', color);
+    };
+    applyTheme();
+    try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ }
+    media?.addEventListener?.('change', applyTheme);
+    return () => media?.removeEventListener?.('change', applyTheme);
+  }, [theme, alertLevel]);
+
   const todayIndex = dayIndex(now);
   const todayPlans = useMemo(
     () => plans.filter((plan) => Number(plan.day) === todayIndex),
@@ -1125,8 +1146,41 @@ function App() {
     </div>
   );
 
+  const kickerIcon = alertLevel
+    ? (alertLevel === 'critical' ? <AlertTriangle size={15} /> : <Flame size={15} />)
+    : <Sparkles size={15} />;
+  const kickerText = alertLevel === 'critical'
+    ? 'هشدار فوری — امتحان امروز'
+    : alertLevel === 'urgent'
+      ? `${remaining(alertExam, now)} تا امتحان`
+      : alertLevel === 'soon'
+        ? 'امتحان در همین نزدیکی'
+        : (tab === 'week' ? 'هفته‌ات را بساز' : 'آماده و بی‌استرس');
+  const heroTitle = alertLevel
+    ? (nextDaysLeft <= 0
+      ? `امروز امتحان ${alertExam.name} داری!`
+      : nextDaysLeft === 1
+        ? `فردا امتحان ${alertExam.name} داری`
+        : `${faNumber(nextDaysLeft)} روز به امتحان ${alertExam.name} مانده`)
+    : (tab === 'week' ? 'برای یک هفته‌ی خوب آماده‌ای؟' : 'امتحان‌ها، مرتب و جلوی چشم');
+  const heroDesc = alertLevel
+    ? (nextDaysLeft <= 0
+      ? 'امتحان همین امروز برگزار می‌شود. موفق باشی! کارت‌ها و جزوه‌های لازم را چک کن.'
+      : nextDaysLeft === 1
+        ? 'فقط یک روز فرصت باقی است. امروز یک مرور نهایی کن و استراحت خوبی داشته باش.'
+        : 'وقت طلایی مرور و جمع‌بندی است. با قدم‌های کوچک، آماده شو.')
+    : (tab === 'week'
+      ? (todayPlans.length
+        ? (todayTasks.length
+          ? `امروز ${faNumber(todayPlans.length)} برنامه داری و ${todayLeft ? `${faNumber(todayLeft)} زیرتسک هنوز مانده.` : 'همه زیرتسک‌ها را انجام داده‌ای. عالی بود!'}`
+          : `امروز ${faNumber(todayPlans.length)} برنامه داری؛ برای هر کدام زیرتسک بساز.`)
+        : 'برنامه‌هایت را سبک و روشن بچین؛ بقیه‌اش قدم‌به‌قدم جلو می‌رود.')
+      : 'تاریخ‌ها و مباحث مهم را یک‌جا نگه دار و هیچ موعدی را از دست نده.');
+  const heroActionLabel = alertLevel ? 'رفتن به امتحان‌ها' : (tab === 'week' ? 'برنامه تازه' : 'ثبت امتحان');
+  const onHeroAction = alertLevel ? () => switchTab('exams') : openNew;
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${alertLevel ? `exam-alert exam-alert-${alertLevel}` : ''}`} data-alert={alertLevel || ''}>
       <header className="app-header">
         <div className="header-inner">
           <div className="brand">
@@ -1138,9 +1192,9 @@ function App() {
             <button className={tab === 'week' ? 'selected' : ''} aria-current={tab === 'week'} onClick={() => switchTab('week')}>
               <BookOpenCheck size={18} /> هفته من
             </button>
-            <button className={tab === 'exams' ? 'selected' : ''} aria-current={tab === 'exams'} onClick={() => switchTab('exams')}>
+            <button className={`${tab === 'exams' ? 'selected' : ''} ${alertLevel ? 'has-alert' : ''}`} aria-current={tab === 'exams'} onClick={() => switchTab('exams')}>
               <ClipboardList size={18} /> امتحان‌ها
-              {upcoming.length > 0 && <span className="nav-count">{faNumber(upcoming.length)}</span>}
+              {(upcoming.length > 0 || alertLevel) && <span className={`nav-count ${alertLevel ? 'alert-pill' : ''}`}>{faNumber(upcoming.length)}</span>}
             </button>
           </div>
 
@@ -1154,25 +1208,51 @@ function App() {
         </div>
       </header>
 
+      {alertLevel && alertExam && (
+        <div className={`exam-alert-banner level-${alertLevel}`} role="alert">
+          <div className="banner-icon">
+            {alertLevel === 'critical' ? <AlertTriangle size={22} /> : <Flame size={22} />}
+          </div>
+          <div className="banner-copy">
+            <b>
+              {nextDaysLeft <= 0
+                ? `امروز امتحان ${alertExam.name} داری!`
+                : nextDaysLeft === 1
+                  ? `فردا امتحان ${alertExam.name} داری`
+                  : `${faNumber(nextDaysLeft)} روز مانده به ${alertExam.name}`}
+            </b>
+            <span>{longDate(parseLocalDate(alertExam.date))} — {remaining(alertExam, now)}</span>
+          </div>
+          <button className="banner-action" onClick={() => switchTab('exams')}>مشاهده</button>
+        </div>
+      )}
+
       <main>
-        <section className="hero">
+        <section className={`hero ${alertLevel ? 'hero-alert' : ''}`}>
           <div className="hero-copy">
-            <span className="hero-kicker"><Sparkles size={15} /> {tab === 'week' ? 'هفته‌ات را بساز' : 'آماده و بی‌استرس'}</span>
-            <h1>{tab === 'week' ? 'برای یک هفته‌ی خوب آماده‌ای؟' : 'امتحان‌ها، مرتب و جلوی چشم'}</h1>
-            <p>
-              {tab === 'week'
-                ? (todayPlans.length
-                  ? (todayTasks.length
-                    ? `امروز ${faNumber(todayPlans.length)} برنامه داری و ${todayLeft ? `${faNumber(todayLeft)} زیرتسک هنوز مانده.` : 'همه زیرتسک‌ها را انجام داده‌ای. عالی بود!'}`
-                    : `امروز ${faNumber(todayPlans.length)} برنامه داری؛ برای هر کدام زیرتسک بساز.`)
-                  : 'برنامه‌هایت را سبک و روشن بچین؛ بقیه‌اش قدم‌به‌قدم جلو می‌رود.')
-                : 'تاریخ‌ها و مباحث مهم را یک‌جا نگه دار و هیچ موعدی را از دست نده.'}
-            </p>
-            <button className="button hero-button" onClick={openNew}><Plus size={19} />{tab === 'week' ? 'برنامه تازه' : 'ثبت امتحان'}</button>
+            <span className="hero-kicker">{kickerIcon} {kickerText}</span>
+            <h1>{heroTitle}</h1>
+            <p>{heroDesc}</p>
+            <button className={`button hero-button ${alertLevel ? 'hero-button-alert' : ''}`} onClick={onHeroAction}>
+              <Plus size={19} />{heroActionLabel}
+            </button>
           </div>
 
           <div className="hero-summary" aria-label="خلاصه برنامه">
-            {tab === 'week' ? (
+            {alertLevel && alertExam ? (
+              <>
+                <div className="summary-item wide-summary alert-summary">
+                  <span>{nextDaysLeft <= 0 ? 'امتحان امروز' : nextDaysLeft === 1 ? 'امتحان فردا' : 'نزدیک‌ترین امتحان'}</span>
+                  <b>{alertExam.name}</b>
+                  <small>{longDate(parseLocalDate(alertExam.date))}</small>
+                </div>
+                <div className="summary-divider" />
+                <div className="summary-item">
+                  <span>زمان باقی‌مانده</span>
+                  <b className="countdown-big">{remaining(alertExam, now)}</b>
+                </div>
+              </>
+            ) : tab === 'week' ? (
               <>
                 <div className="summary-item"><span>برنامه این هفته</span><b>{faNumber(plans.length)}</b></div>
                 <div className="summary-divider" />
@@ -1194,7 +1274,7 @@ function App() {
           </div>
         </section>
 
-        {tomorrow && (
+        {tomorrow && !alertLevel && (
           <div className="alert-card">
             <div className="alert-icon"><BellRing size={20} /></div>
             <div><b>فردا امتحان {tomorrow.name} داری</b><span>یک مرور کوتاه امروز، خیال فردا را راحت می‌کند.</span></div>
@@ -1405,14 +1485,15 @@ function App() {
         )}
       </main>
 
-      <nav className="bottom-nav" aria-label="بخش‌های برنامه">
+      <nav className={`bottom-nav ${alertLevel ? 'nav-alert' : ''}`} aria-label="بخش‌های برنامه">
         <button className={tab === 'week' ? 'selected' : ''} onClick={() => switchTab('week')}>
           <BookOpenCheck /><span>هفته من</span>
         </button>
-        <button className="nav-add" onClick={openNew} aria-label={tab === 'week' ? 'برنامه تازه' : 'ثبت امتحان'}><Plus /></button>
-        <button className={tab === 'exams' ? 'selected' : ''} onClick={() => switchTab('exams')}>
-          <ClipboardList /><span>امتحان‌ها</span>
-          {upcoming.length > 0 && <i>{faNumber(upcoming.length)}</i>}
+        <button className={`nav-add ${alertLevel ? 'nav-add-alert' : ''}`} onClick={openNew} aria-label={tab === 'week' ? 'برنامه تازه' : 'ثبت امتحان'}><Plus /></button>
+        <button className={`${tab === 'exams' ? 'selected' : ''} ${alertLevel ? 'nav-exam-alert' : ''}`} onClick={() => switchTab('exams')}>
+          {alertLevel === 'critical' ? <AlertTriangle /> : alertLevel ? <Flame /> : <ClipboardList />}
+          <span>امتحان‌ها</span>
+          {(upcoming.length > 0 || alertLevel) && <i className={alertLevel ? 'alert-badge' : ''}>{faNumber(upcoming.length)}</i>}
         </button>
       </nav>
 

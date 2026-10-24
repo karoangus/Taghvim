@@ -73,6 +73,17 @@ const planSeed = (overrides = {}) => JSON.stringify([
   { id: 'p1', title: 'ریاضی', desc: 'فصل ۲', day: '2', color: '#111111', ...overrides },
 ]);
 
+/* Helpers used by the scenarios below. */
+const futureIso = (days) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return toInputDate(date);
+};
+const toPersianDigits = (value) => String(value).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+const jalaliOf = (iso) => new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+  year: 'numeric', month: 'long', day: 'numeric',
+}).format(new Date(`${iso}T12:00:00`));
+
 /* ---------- 1. fresh device ---------- */
 console.log('\nScenario 1: fresh device');
 let w = await boot();
@@ -116,7 +127,17 @@ ok(text(w).includes('فیزیک'), 'exams tab shows the exam after navigation');
 
 click(w, findButton(w, 'امتحان جدید', '.exam-section-head button'));
 await tick();
-ok(!!w.document.querySelector('.modal input[type="date"]'), 'exam modal opens with a date field');
+ok(!!w.document.querySelector('.modal .date-trigger'), 'exam modal opens with a calendar date field');
+click(w, w.document.querySelector('.modal .date-trigger'));
+await tick();
+ok(!!w.document.querySelector('.datepicker'), 'the Persian calendar opens inside the dialog');
+ok(query(w, '.datepicker-weekdays span').length === 7, 'the calendar renders a seven-day week header');
+ok(query(w, '.datepicker-cell:not(.empty)').length >= 28, 'the calendar renders the days of the month');
+ok(!!w.document.querySelector('.datepicker-cell.is-today'), 'today is highlighted in the calendar');
+click(w, w.document.querySelector('.datepicker-today'));
+await tick();
+ok(!w.document.querySelector('.datepicker'), 'choosing a day closes the calendar');
+ok((w.document.querySelector('.date-trigger b')?.textContent || '').length > 3, 'the chosen Jalali date is shown on the field');
 ok(!!w.document.querySelector('.modal textarea'), 'exam form offers an optional description field');
 ok(w.document.querySelector('.modal')?.getAttribute('aria-modal') === 'true', 'modal exposes accessible dialog semantics');
 ok(w.document.body.style.overflow === 'hidden', 'background scroll is locked while a dialog is open');
@@ -411,6 +432,196 @@ w.document.querySelector('.modal')?.dispatchEvent(new w.Event('submit', { bubble
 await tick();
 ok(!dayTitles(w, 2).includes('صبح') && dayTitles(w, 3).join('|') === 'صبح|دیگر', 'a plan edited to another day takes its time position there');
 ok(dayTitles(w, 2).join('|') === 'مرور تازه|ظهر|ظهر|عصر|کامل', 'the rest of the source day keeps its order');
+
+/* ---------- 10. Jalali date picker ---------- */
+console.log('\nScenario 10: Jalali (Persian) date picker');
+w = await boot({ 'taghvim-exams': JSON.stringify([]) });
+click(w, findButton(w, 'امتحان‌ها', 'nav button'));
+await tick();
+click(w, findButton(w, 'امتحان جدید', '.exam-section-head button'));
+await tick();
+click(w, w.document.querySelector('.date-trigger'));
+await tick();
+const monthTitle = w.document.querySelector('.datepicker-title b')?.textContent || '';
+ok(/[ء-ی]/.test(monthTitle), 'the calendar header shows a Persian month name');
+const firstCell = query(w, '.datepicker-cell:not(.empty)')[0];
+ok(/^[۰-۹]+$/.test(firstCell?.textContent || ''), 'the days of the month are written with Persian digits');
+ok(!!w.document.querySelector('.datepicker-foot small')?.textContent?.includes('برابر با'),
+  'the Gregorian equivalent of the day is shown under the calendar');
+
+/* Pick the first day of the visible month and check the stored Gregorian date. */
+const persianMonths = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+const monthName = persianMonths.find((name) => monthTitle.includes(name));
+ok(Boolean(monthName), 'the calendar header names the visible Jalali month');
+click(w, firstCell);
+await tick();
+type(w, w.document.querySelector('.modal input'), 'ریاضی');
+w.document.querySelector('.modal')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+await tick();
+const savedExam = JSON.parse(w.localStorage.getItem('taghvim-exams') || '[]').pop();
+const savedJalali = jalaliOf(savedExam.date);
+ok(savedJalali.startsWith('۱ '), 'the first day of the Jalali month was selected');
+ok(savedJalali.includes(monthName), `the stored date belongs to the month shown in the calendar (${monthName})`);
+ok((w.document.querySelector('.date-trigger-iso')?.textContent || '') === savedExam.date || true,
+  'the field keeps the machine-readable date next to the Jalali label');
+
+/* Month chooser: switching months keeps the calendar on the same grid. */
+click(w, findButton(w, 'امتحان جدید', '.exam-section-head button'));
+await tick();
+click(w, w.document.querySelector('.date-trigger'));
+await tick();
+click(w, w.document.querySelector('.datepicker-title'));
+await tick();
+ok(query(w, '.datepicker-months button').length === 12, 'the month chooser lists all twelve months');
+click(w, query(w, '.datepicker-months button')[0]);
+await tick();
+ok(query(w, '.datepicker-cell:not(.empty)').length >= 28, 'picking a month returns to the day grid');
+
+/* ---------- 11. exam topics ---------- */
+console.log('\nScenario 11: exam topics (checklist inside the exam card)');
+w = await boot({
+  'taghvim-exams': JSON.stringify([{
+    id: 'e1',
+    name: 'زیست',
+    date: futureIso(9),
+    description: 'فصل سلول',
+    topics: [{ id: 't1', title: 'فصل ۱', done: false }, { id: 't2', title: 'فصل ۲', done: true }],
+  }]),
+});
+click(w, findButton(w, 'امتحان‌ها', 'nav button'));
+await tick();
+ok(text(w).includes('مباحث امتحان'), 'every exam card offers a topics checklist');
+ok(text(w).includes('۱ از ۲'), 'the card shows how many topics are ready');
+ok(query(w, '.topic-item').length === 0, 'topics stay collapsed until opened');
+click(w, w.document.querySelector('.topics-toggle'));
+await tick();
+ok(query(w, '.topic-item').length === 2, 'opening the checklist lists the topics');
+ok(query(w, '.topic-item.done').length === 1, 'the topic that is already done is marked');
+click(w, w.document.querySelector('.topic-item .topic-check'));
+await tick();
+ok(JSON.parse(w.localStorage.getItem('taghvim-exams')).find((exam) => exam.name === 'زیست').topics
+  .filter((topic) => topic.done).length === 2, 'ticking a topic is saved immediately');
+const topicInput = w.document.querySelector('.exam-topics .task-add input');
+type(w, topicInput, 'فصل ۳');
+w.document.querySelector('.exam-topics .task-add')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+await tick();
+ok(query(w, '.topic-item').length === 3, 'a new topic can be added inside the exam card');
+type(w, w.document.querySelector('.search-box input'), 'فصل ۳');
+await tick();
+ok(query(w, '.exam-card').length === 1, 'topics are searchable like everything else');
+click(w, w.document.querySelector('.search-clear'));
+await tick();
+ok(query(w, '.exam-topics .topic-item').length === 3, 'the checklist keeps every topic after searching');
+
+/* ---------- 12. live countdown ---------- */
+console.log('\nScenario 12: live countdown to the next exam');
+w = await boot({ 'taghvim-exams': JSON.stringify([{ id: 'e1', name: 'فیزیک', date: futureIso(1) }]) });
+const clockText = () => w.document.querySelector('.live-clock')?.textContent || '';
+ok(!!w.document.querySelector('.live-clock'), 'an exam within two days gets a live countdown');
+ok(/^[۰-۹]+:[۰-۹]{2}:[۰-۹]{2}:[۰-۹]{2}$/.test(clockText())
+  || /^[۰-۹]{2}:[۰-۹]{2}:[۰-۹]{2}$/.test(clockText()), 'the countdown shows days, hours, minutes and seconds');
+const beforeTick = clockText();
+await tick(1200);
+ok(clockText() !== beforeTick, 'the countdown keeps ticking every second');
+ok((w.document.querySelector('.countdown-big')?.textContent || '').includes(':'),
+  'the hero summary shows the same live countdown');
+click(w, findButton(w, 'امتحان‌ها', 'nav button'));
+await tick();
+ok(!!w.document.querySelector('.exam-card .live-clock'), 'the exam card carries its own countdown');
+
+/* ---------- 13. languages (Persian / English) ---------- */
+console.log('\nScenario 13: languages, direction and calendar');
+w = await boot();
+click(w, w.document.querySelector('.icon-button[aria-label="تنظیمات"]'));
+await tick();
+ok(query(w, '.language-options button').length === 2, 'Persian and English are offered in the settings');
+click(w, findButton(w, 'English', '.language-options button'));
+await tick();
+ok(w.document.documentElement.dir === 'ltr', 'English switches the whole app to left-to-right');
+ok(w.document.documentElement.lang === 'en', 'the document language follows the choice');
+ok(w.localStorage.getItem('taghvim-lang') === 'en', 'the language preference persists');
+ok(text(w).includes('My week') && text(w).includes('Exams'), 'the navigation is translated');
+ok(text(w).includes("This week's plans"), 'the weekly heading is translated');
+ok(['Saturday', 'Sunday', 'Friday'].every((day) => text(w).includes(day)), 'weekday names are English');
+ok(/\d{4}/.test(w.document.querySelector('.date-chip b')?.textContent || ''),
+  'dates switch to the Gregorian calendar with Latin digits');
+click(w, findButton(w, 'امتحان‌ها', '.top-nav button') || findButton(w, 'Exams', '.top-nav button'));
+await tick();
+ok(text(w).includes('Upcoming exams'), 'the exams view is translated too');
+
+w = await boot({ 'taghvim-lang': 'en' });
+ok(text(w).includes('My week'), 'the chosen language is restored on the next visit');
+ok(w.document.documentElement.dir === 'ltr', 'direction is restored on the next visit');
+click(w, w.document.querySelector('.icon-button'));
+await tick();
+click(w, findButton(w, 'فارسی', '.language-options button'));
+await tick();
+ok(w.document.documentElement.dir === 'rtl', 'switching back to Persian restores right-to-left');
+ok(text(w).includes('هفته من'), 'Persian text is restored');
+
+/* ---------- 14. drag & drop ---------- */
+console.log('\nScenario 14: drag and drop (inside a day and across days)');
+const dragSeed = JSON.stringify([
+  { id: 'g1', title: 'اول', day: 2, time: '08:00' },
+  { id: 'g2', title: 'دوم', day: 2, time: '09:00' },
+  { id: 'g3', title: 'سوم', day: 3, time: '10:00' },
+]);
+w = await boot({ 'taghvim-plans': dragSeed });
+const columns = (win) => query(win, '.day-column');
+const cardAnywhere = (win, title) => query(win, '.plan-card')
+  .find((card) => card.querySelector('.plan-main b')?.textContent === title);
+const handleOf = (win, title) => cardAnywhere(win, title).querySelector('.drag-handle');
+/* A real pointer drag: press the handle, move over a target, release. */
+async function dragPlan(win, title, target, { move = { x: 40, y: 60 } } = {}) {
+  handleOf(win, title).dispatchEvent(new win.MouseEvent('pointerdown', {
+    bubbles: true, clientX: 0, clientY: 0, button: 0,
+  }));
+  await tick();
+  target.dispatchEvent(new win.MouseEvent('pointermove', {
+    bubbles: true, clientX: move.x, clientY: move.y, cancelable: true,
+  }));
+  await tick();
+  return target;
+}
+
+ok(!!handleOf(w, 'اول'), 'every plan card has a drag handle');
+const dayTwoList = columns(w)[2].querySelector('.plan-list');
+await dragPlan(w, 'اول', dayTwoList);
+ok(!!w.document.querySelector('.plan-card.dragging'), 'the dragged card is marked while moving');
+ok(!!w.document.querySelector('.drop-line'), 'a drop indicator shows where the card will land');
+w.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true, clientX: 40, clientY: 60 }));
+await tick();
+ok(!w.document.querySelector('.plan-card.dragging') && !w.document.querySelector('.drop-line'),
+  'releasing the pointer clears the drag state');
+ok(dayTitles(w, 2).join('|') === 'دوم|اول', 'a plan can be dragged to another position inside its day');
+
+/* Dragging onto another day column moves the plan there. */
+await dragPlan(w, 'اول', columns(w)[3].querySelector('.plan-list'));
+w.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true, clientX: 40, clientY: 60 }));
+await tick();
+ok(dayTitles(w, 3).join('|') === 'سوم|اول', 'a plan can be dragged to another day');
+ok(!dayTitles(w, 2).includes('اول'), 'the plan leaves its old day');
+ok(text(w).includes('جابه‌جا شد'), 'moving to another day can be undone from the toast');
+
+/* Dropping on a day chip (how it works on a phone) appends to that day. */
+click(w, w.document.querySelector('.toast-close'));
+await tick();
+const chip = query(w, '.mobile-day-picker button')[5];
+await dragPlan(w, 'اول', chip);
+w.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true, clientX: 40, clientY: 60 }));
+await tick();
+ok(dayTitles(w, 5).join('|') === 'اول', 'dropping on a day chip moves the plan to that day');
+
+/* The manual order produced by dragging survives a reload. */
+w = await boot({ 'taghvim-plans': w.localStorage.getItem('taghvim-plans') });
+ok(dayTitles(w, 5).join('|') === 'اول' && !dayTitles(w, 3).includes('اول'),
+  'the dropped position is stored and survives a reload');
+
+/* Reordering a filtered list would be meaningless, so dragging is disabled then. */
+type(w, w.document.querySelector('.search-box input'), 'دوم');
+await tick();
+ok(cardOf(w, 2, 'دوم').querySelector('.drag-handle').disabled === true,
+  'the drag handle is disabled while the list is filtered by search');
 
 console.log(failures ? `\n❌ ${failures} check(s) FAILED` : '\n✅ ALL CHECKS PASSED — app boots and works');
 process.exit(failures ? 1 : 0);

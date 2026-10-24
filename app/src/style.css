@@ -569,6 +569,10 @@ main {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 10px;
+}
+
+/* The week starts on Saturday in both languages; only the writing direction flips. */
+:root[dir='rtl'] .week-grid {
   direction: rtl;
 }
 
@@ -685,7 +689,8 @@ main {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  margin: -5px -2px 0 0;
+  margin-block-start: -5px;
+  margin-inline-start: -2px;
   color: var(--muted);
   background: transparent;
   border-radius: 8px;
@@ -771,7 +776,7 @@ main {
   min-width: 112px;
   position: absolute;
   top: 35px;
-  left: 7px;
+  inset-inline-end: 7px;
   z-index: 15;
   padding: 5px;
   background: var(--surface-raised);
@@ -939,7 +944,7 @@ main {
 
 .exam-menu {
   top: 56px;
-  left: 14px;
+  inset-inline-end: 14px;
 }
 
 .blank-state {
@@ -1657,7 +1662,7 @@ main {
   height: 4px;
   position: absolute;
   top: 7px;
-  left: 7px;
+  inset-inline-start: 7px;
   background: currentColor;
   border-radius: 50%;
   opacity: 0.85;
@@ -1779,8 +1784,11 @@ main {
   color: #fff;
   background: linear-gradient(100deg, var(--alert-hero-start), var(--alert-hero-end));
   box-shadow: 0 10px 30px color-mix(in srgb, var(--alert) 30%, transparent);
-  direction: rtl;
   animation: banner-slide 260ms ease-out;
+}
+
+:root[dir='rtl'] .exam-alert-banner {
+  direction: rtl;
 }
 
 .exam-alert-banner.level-urgent {
@@ -2592,6 +2600,9 @@ main {
     grid-template-columns: repeat(7, 1fr);
     gap: 5px;
     margin-bottom: 11px;
+  }
+
+  :root[dir='rtl'] .mobile-day-picker {
     direction: rtl;
   }
 
@@ -2732,12 +2743,12 @@ main {
   .exam-more {
     position: absolute;
     top: 12px;
-    left: 9px;
+    inset-inline-end: 9px;
   }
 
   .exam-menu {
     top: 43px;
-    left: 9px;
+    inset-inline-end: 9px;
   }
 
   .exam-alert-banner {
@@ -3226,4 +3237,528 @@ main {
   background: transparent;
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* ==========================================================================
+   language switch
+   ========================================================================== */
+.language-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.language-options button {
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0 8px;
+  color: var(--text-soft);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.language-options button:hover {
+  border-color: color-mix(in srgb, var(--brand) 40%, var(--line));
+}
+
+.language-options button.selected {
+  color: var(--brand);
+  background: var(--brand-soft);
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+}
+
+.shortcut-list li kbd.kbd-icon {
+  display: inline-grid;
+  place-items: center;
+  padding: 0 6px;
+}
+
+/* ==========================================================================
+   Jalali / Gregorian date picker
+   ========================================================================== */
+.date-field {
+  position: relative;
+  margin-top: 14px;
+}
+
+.date-trigger {
+  width: 100%;
+  min-height: 45px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  text-align: start;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.date-trigger > svg:first-child {
+  flex: 0 0 auto;
+  color: var(--brand);
+}
+
+.date-trigger b {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.date-trigger-iso {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.5rem;
+  letter-spacing: 0.3px;
+}
+
+.date-trigger-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 160ms ease;
+}
+
+.date-trigger:hover {
+  border-color: color-mix(in srgb, var(--brand) 40%, var(--line));
+}
+
+.date-trigger.open {
+  color: var(--brand);
+  background: var(--surface);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 10%, transparent);
+}
+
+.date-trigger.open .date-trigger-chevron {
+  transform: rotate(180deg);
+}
+
+.datepicker {
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 13px;
+  box-shadow: var(--shadow-sm);
+}
+
+.datepicker-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.datepicker-nav {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.datepicker-nav:hover {
+  color: var(--brand);
+  border-color: color-mix(in srgb, var(--brand) 40%, var(--line));
+}
+
+.datepicker-title {
+  min-width: 0;
+  height: 32px;
+  flex: 1;
+  padding: 0 4px;
+  color: var(--text);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 800;
+}
+
+.datepicker-title:hover {
+  color: var(--brand);
+}
+
+.datepicker-weekdays,
+.datepicker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: 7px;
+}
+
+.datepicker-weekdays span {
+  height: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.5625rem;
+  font-weight: 800;
+}
+
+.datepicker-cell {
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  border-radius: 9px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.datepicker-cell.empty {
+  pointer-events: none;
+}
+
+.datepicker-cell:not(.empty):hover {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.datepicker-cell.is-today {
+  color: var(--brand);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 45%, transparent);
+}
+
+.datepicker-cell.is-selected {
+  color: var(--brand-contrast);
+  background: var(--brand);
+}
+
+.datepicker-cell.is-selected:hover {
+  color: var(--brand-contrast);
+  background: var(--brand-strong);
+}
+
+.datepicker-months {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.datepicker-months button {
+  min-height: 34px;
+  padding: 0 4px;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+
+.datepicker-months button:hover {
+  color: var(--brand);
+  border-color: color-mix(in srgb, var(--brand) 40%, var(--line));
+}
+
+.datepicker-months button.selected {
+  color: var(--brand);
+  background: var(--brand-soft);
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+}
+
+.datepicker-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.datepicker-today {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  color: var(--brand);
+  background: var(--brand-soft);
+  border-radius: 8px;
+  font-size: 0.625rem;
+  font-weight: 800;
+}
+
+.datepicker-foot small {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.5rem;
+  text-align: end;
+}
+
+/* ==========================================================================
+   drag & drop for plans (inside a day and across days)
+   ========================================================================== */
+.drag-handle {
+  width: 22px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 7px;
+  cursor: grab;
+  opacity: 0.5;
+  touch-action: none;
+  transition: opacity 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+.drag-handle:hover {
+  color: var(--plan-color);
+  background: color-mix(in srgb, var(--plan-color) 12%, var(--surface));
+  opacity: 1;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle:disabled {
+  cursor: not-allowed;
+  opacity: 0.2;
+}
+
+body.plan-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing;
+}
+
+body.plan-dragging * {
+  cursor: grabbing !important;
+}
+
+.plan-card.dragging {
+  opacity: 0.45;
+  border-style: dashed;
+  box-shadow: none;
+  transform: scale(0.99);
+}
+
+.plan-card.dragging .plan-card-head > *:not(.drag-handle) {
+  pointer-events: none;
+}
+
+.drop-line {
+  height: 3px;
+  margin: 1px 0;
+  background: var(--brand);
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+  pointer-events: none;
+  animation: drop-line-in 140ms ease-out;
+}
+
+@keyframes drop-line-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.day-column.drop-target {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+  background: color-mix(in srgb, var(--brand) 4%, var(--surface));
+}
+
+.mobile-day-picker button.drop-target {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+/* ==========================================================================
+   exam topics + live countdown
+   ========================================================================== */
+.exam-card {
+  --plan-color: var(--brand);
+}
+
+.exam-topics-block {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.topics-toggle {
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 0.625rem;
+  font-weight: 800;
+}
+
+.topics-toggle:hover {
+  color: var(--brand);
+  border-color: color-mix(in srgb, var(--brand) 40%, var(--line));
+}
+
+.topics-toggle > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.topics-count {
+  flex: 0 0 auto;
+  color: var(--brand);
+  font-size: 0.5625rem;
+}
+
+.topics-toggle svg:last-child {
+  flex: 0 0 auto;
+  transition: transform 160ms ease;
+}
+
+.topics-toggle svg:last-child.rotated {
+  transform: rotate(180deg);
+}
+
+.topics-track {
+  height: 4px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.topics-track i {
+  display: block;
+  height: 100%;
+  background: var(--success);
+  border-radius: 999px;
+  transition: width 260ms ease;
+}
+
+.exam-topics {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+.topic-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.topic-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 3px 2px;
+  border-radius: 7px;
+}
+
+.topic-check {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  border-radius: 5px;
+}
+
+.topic-title {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.topic-item.done .topic-title {
+  color: var(--text-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.topic-delete {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 6px;
+}
+
+.topic-delete:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.past-topics {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Live countdown: fixed-width digits so the clock never jitters. */
+.live-clock {
+  display: inline-block;
+  margin-inline-start: 5px;
+  padding: 1px 5px;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  border-radius: 6px;
+  font-style: normal;
+  font-size: 0.625rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+.countdown-big {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+.countdown-summary {
+  min-width: 128px;
+}
+
+.exam-card.urgent .live-clock {
+  color: var(--urgent);
+  background: var(--urgent-soft);
+}
+
+.exam-alert .live-clock {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-line {
+    animation: none;
+  }
+
+  .date-trigger-chevron,
+  .topics-toggle svg:last-child {
+    transition: none;
+  }
 }

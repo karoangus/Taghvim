@@ -228,6 +228,10 @@ const strings = {
     'settings.shortcut.tabs': 'جابه‌جایی بین هفته و امتحان‌ها',
     'settings.shortcut.close': 'بستن پنجره‌ها',
     'settings.shortcut.drag': 'کشیدن دستگیره برنامه برای جابه‌جایی',
+    'settings.motion': 'انیمیشن‌ها',
+    'settings.motionHint': 'رویه‌های حرکتی برنامه را خاموش می‌کند (مناسب برای گوشی‌های ضعیف‌تر)',
+    'settings.motionOn': 'رویه‌های حرکتی',
+    'settings.motionOff': 'کاهش حرکتی (بدون انیمیشن)',
     'settings.privacy': 'همه اطلاعات فقط روی دستگاه تو نگهداری می‌شود و به سروری ارسال نمی‌شود.',
 
     'toast.planSaved': 'تغییرات برنامه ذخیره شد',
@@ -467,6 +471,10 @@ const strings = {
     'settings.shortcut.tabs': 'Switch between week and exams',
     'settings.shortcut.close': 'Close dialogs',
     'settings.shortcut.drag': 'Drag a plan by its handle to move it',
+    'settings.motion': 'Animations',
+    'settings.motionHint': 'Turn off motion effects (helps on low-end phones)',
+    'settings.motionOn': 'Motion effects',
+    'settings.motionOff': 'Reduced motion',
     'settings.privacy': 'All data stays on your device and is never sent to a server.',
 
     'toast.planSaved': 'Plan changes saved',

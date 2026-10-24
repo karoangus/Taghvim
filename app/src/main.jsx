@@ -22,6 +22,7 @@ import {
   Languages,
   ListChecks,
   Monitor,
+  Zap,
   Moon,
   MoreHorizontal,
   Minus,
@@ -56,6 +57,7 @@ const PLANS_KEY = 'taghvim-plans';
 const EXAMS_KEY = 'taghvim-exams';
 const THEME_KEY = 'taghvim-theme';
 const FONT_SCALE_KEY = 'taghvim-font-scale';
+const MOTION_KEY = 'taghvim-motion';
 const FONT_SCALE_OPTIONS = [0.9, 1, 1.1, 1.2];
 const stickerOptions = ['✨', '📚', '🧠', '✏️', '🎯', '💡', '🌱', '📝', '🎨', '💻', '🏃', '🎵', '🧪', '☕', '🏆', '🚀', '🔥', '📌', '🧩', '💪', '🌈', '❤️', '🌙', '⭐'];
 
@@ -251,6 +253,14 @@ function loadFontScale() {
     return normalizeFontScale(localStorage.getItem(FONT_SCALE_KEY));
   } catch {
     return 1;
+  }
+}
+
+function loadMotion() {
+  try {
+    return localStorage.getItem(MOTION_KEY) !== 'false';
+  } catch {
+    return true;
   }
 }
 
@@ -654,6 +664,7 @@ function Modal({ data, onClose, onPlan, onExam, t, format }) {
 
 function SettingsPanel({
   theme, setTheme, fontScale, setFontScale, lang, setLang,
+  reduceMotion, setReduceMotion,
   plansCount, examsCount, examTotal,
   onExport, onExportIcs, onImport, onClearAll, onClose,
   t, format,
@@ -743,6 +754,23 @@ function SettingsPanel({
               })}
             ><span aria-hidden="true">{lang === 'fa' ? 'ا' : 'A'}</span><Plus size={16} /></button>
           </div>
+        </div>
+
+        <div className="setting-block motion-setting">
+          <div className="setting-copy">
+            <b><Zap size={14} /> {t('settings.motion')}</b>
+            <span>{t('settings.motionHint')}</span>
+          </div>
+          <button
+            className={reduceMotion ? 'selected' : ''}
+            aria-pressed={reduceMotion}
+            type="button"
+            role="switch"
+            aria-checked={reduceMotion}
+            onClick={() => setReduceMotion((current) => !current)}
+          >
+            {reduceMotion ? t('settings.motionOn') : t('settings.motionOff')}
+          </button>
         </div>
 
         <div className="setting-block data-setting">
@@ -994,6 +1022,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState(loadTheme);
   const [fontScale, setFontScale] = useState(loadFontScale);
+  const [reduceMotion, setReduceMotion] = useState(loadMotion);
   const [lang, setLang] = useState(loadLanguage);
   const [toast, setToast] = useState(null);
   const [queryText, setQueryText] = useState('');
@@ -1160,6 +1189,12 @@ function App() {
     return () => media?.removeEventListener?.('change', applyTheme);
   }, [theme, alertLevel]);
 
+  /* Expose reduced-motion preference to CSS so every animated piece can opt out. */
+  useEffect(() => {
+    document.documentElement.dataset.reduceMotion = String(reduceMotion);
+    try { localStorage.setItem(MOTION_KEY, String(reduceMotion)); } catch { /* ignore */ }
+  }, [reduceMotion]);
+
   const todayIndex = dayIndex(now);
   const todayPlans = useMemo(
     () => plans.filter((plan) => Number(plan.day) === todayIndex),
@@ -1174,6 +1209,7 @@ function App() {
     () => setModal(tab === 'week' ? { type: 'plan', day: selectedDay } : { type: 'exam' }),
     [tab, selectedDay],
   );
+  const closeModal = useCallback(() => setModal(null), []);
 
   const switchTab = useCallback((nextTab) => {
     setTab(nextTab);
@@ -1992,7 +2028,7 @@ function App() {
         </button>
       </nav>
 
-      {modal && <Modal t={t} format={format} data={modal} onClose={() => setModal(null)} onPlan={savePlan} onExam={saveExam} />}
+      {modal && <Modal t={t} format={format} data={modal} onClose={closeModal} onPlan={savePlan} onExam={saveExam} />}
       {settingsOpen && (
         <SettingsPanel
           t={t}
@@ -2001,6 +2037,8 @@ function App() {
           setTheme={setTheme}
           fontScale={fontScale}
           setFontScale={setFontScale}
+          reduceMotion={reduceMotion}
+          setReduceMotion={setReduceMotion}
           lang={lang}
           setLang={setLang}
           plansCount={plans.length}

@@ -3762,3 +3762,41 @@ body.plan-dragging * {
     transition: none;
   }
 }
+
+/* ---------- user-requested reduced motion (for low-end phones) ---------- */
+[data-reduce-motion="true"] *,
+[data-reduce-motion="true"] ::before,
+[data-reduce-motion="true"] ::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+[data-reduce-motion="true"] .modal {
+  animation: none !important;
+}
+
+[data-reduce-motion="true"] .overlay {
+  animation: none !important;
+}
+
+[data-reduce-motion="true"] .drop-line {
+  animation: none !important;
+}
+
+[data-reduce-motion="true"] .exam-alert-banner {
+  animation: none !important;
+}
+
+[data-reduce-motion="true"] .plan-card {
+  animation: none !important;
+}
+
+[data-reduce-motion="true"] .day-column {
+  animation: none !important;
+}
+
+[data-reduce-motion="true"] .toast {
+  animation: none !important;
+}

@@ -1,4 +1,4 @@
-import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AlertTriangle,
@@ -10,13 +10,17 @@ import {
   CalendarPlus,
   Check,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Clock3,
   Copy,
   Download,
   Edit3,
   Flame,
+  GripVertical,
   Keyboard,
+  Languages,
+  ListChecks,
   Monitor,
   Moon,
   MoreHorizontal,
@@ -31,8 +35,22 @@ import {
   X,
 } from 'lucide-react';
 import './style.css';
+import {
+  dayIndex,
+  isValidDate,
+  parseLocalDate,
+  toInput,
+} from './calendar.js';
+import {
+  createFormat,
+  getLanguage,
+  languages,
+  loadLanguage,
+  saveLanguage,
+  translator,
+} from './i18n.js';
+import { DateField } from './date-picker.jsx';
 
-const faDays = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];
 const planColors = ['#6558e8', '#ee7b53', '#16a37d', '#d95782', '#d89a25', '#3186d5'];
 const PLANS_KEY = 'taghvim-plans';
 const EXAMS_KEY = 'taghvim-exams';
@@ -42,11 +60,6 @@ const FONT_SCALE_OPTIONS = [0.9, 1, 1.1, 1.2];
 const stickerOptions = ['✨', '📚', '🧠', '✏️', '🎯', '💡', '🌱', '📝', '🎨', '💻', '🏃', '🎵', '🧪', '☕', '🏆', '🚀', '🔥', '📌', '🧩', '💪', '🌈', '❤️', '🌙', '⭐'];
 
 const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const faNumber = (value) => {
-  try { return new Intl.NumberFormat('fa-IR').format(value); } catch { return String(value); }
-};
-/* Persian digits for clock values such as "۰۸:۳۰" (Intl would add separators). */
-const faDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
 /* ---------- normalisation: legacy/hand-edited data must never break the UI ---------- */
 function normalizeSticker(value) {
@@ -64,6 +77,18 @@ function normalizeTask(raw) {
     sticker: normalizeSticker(raw.sticker),
     // "done" stores the week it was completed in, so it resets automatically every week.
     done: typeof raw.done === 'string' ? raw.done : '',
+  };
+}
+
+/* Exam topics are a plain checklist: unlike sub-tasks they never reset by themselves. */
+function normalizeTopic(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const title = String(raw.title ?? raw.name ?? '').trim();
+  if (!title) return null;
+  return {
+    id: raw.id ? String(raw.id) : uid(),
+    title: title.slice(0, 80),
+    done: raw.done === true || raw.done === 'true',
   };
 }
 
@@ -103,6 +128,7 @@ function normalizeExam(raw) {
     name: name.slice(0, 80),
     date,
     description: String(raw.description ?? raw.desc ?? '').trim().slice(0, 500),
+    topics: Array.isArray(raw.topics) ? raw.topics.map(normalizeTopic).filter(Boolean).slice(0, 60) : [],
   };
 }
 
@@ -158,6 +184,29 @@ function placeInDay(items, plan) {
   return writeDayOrder(base, day, orderedIds);
 }
 
+/* Drag & drop: puts `planId` at visual position `targetIndex` of `targetDay`.
+   Completed plans always stay grouped at the bottom of their day. */
+function movePlanToPosition(items, planId, targetDay, targetIndex, weekKey) {
+  const moving = items.find((item) => item.id === planId);
+  if (!moving) return items;
+  const day = Number(targetDay);
+  if (!Number.isInteger(day) || day < 0 || day > 6) return items;
+  const base = withDayOrder(items, day);
+  const siblings = base
+    .filter((item) => Number(item.day) === day && item.id !== planId)
+    .sort((a, b) => compareDisplayOrder(a, b, weekKey));
+  const ids = siblings.map((item) => item.id);
+  const firstDone = ids.findIndex((id) => isPlanComplete(base.find((item) => item.id === id), weekKey));
+  let min = 0;
+  let max = ids.length;
+  if (isPlanComplete(moving, weekKey)) min = firstDone < 0 ? ids.length : firstDone;
+  else if (firstDone >= 0) max = firstDone;
+  const at = Math.min(Math.max(Number(targetIndex) || 0, min), max);
+  ids.splice(at, 0, planId);
+  const moved = { ...moving, day };
+  return writeDayOrder(base.filter((item) => item.id !== planId).concat([moved]), day, ids);
+}
+
 function loadPlans() {
   const plans = loadList(PLANS_KEY, normalizePlan);
   return [0, 1, 2, 3, 4, 5, 6].reduce((items, day) => withDayOrder(items, day), plans);
@@ -206,21 +255,6 @@ function loadFontScale() {
 }
 
 /* ---------- date helpers ---------- */
-function faFormat(date, options) {
-  try {
-    return new Intl.DateTimeFormat('fa-IR-u-ca-persian', options).format(date);
-  } catch {
-    try { return date.toLocaleDateString('fa-IR', options); } catch { return date.toLocaleDateString(); }
-  }
-}
-
-const jalali = (date) => faFormat(date, { year: 'numeric', month: 'long', day: 'numeric' });
-const shortDate = (date) => faFormat(date, { month: 'short', day: 'numeric' });
-const longDate = (date) => faFormat(date, { weekday: 'long', day: 'numeric', month: 'long' });
-const toInput = (date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-const dayIndex = (date) => (date.getDay() + 1) % 7;
-const parseLocalDate = (value) => new Date(`${value}T12:00:00`);
-const isValidDate = (date) => date instanceof Date && !Number.isNaN(date.getTime());
 
 /* Saturday-based week start, used as the key that auto-resets weekly progress. */
 function weekStartKey(now) {
@@ -239,13 +273,51 @@ function daysUntil(value, now) {
   return Math.round((target - today) / 86400000);
 }
 
-function remaining(exam, now) {
+/* ---------- countdown: live time left until the day of the exam begins ---------- */
+function countdownParts(exam, now) {
+  const target = parseLocalDate(exam.date);
+  if (!isValidDate(target)) return null;
+  target.setHours(0, 0, 0, 0);
+  const diff = target.getTime() - now.getTime();
+  if (diff <= 0) return null; // the exam day has already begun
+  return {
+    days: Math.floor(diff / 86400000),
+    hours: Math.floor((diff % 86400000) / 3600000),
+    minutes: Math.floor((diff % 3600000) / 60000),
+    seconds: Math.floor((diff % 60000) / 1000),
+    diff,
+  };
+}
+
+/* Monospace clock: "d:hh:mm:ss" or "hh:mm:ss". */
+function countdownClock(exam, now, format) {
+  const parts = countdownParts(exam, now);
+  if (!parts) return '';
+  const pad = (value) => format.digits(String(value).padStart(2, '0'));
+  const clock = `${pad(parts.hours)}:${pad(parts.minutes)}:${pad(parts.seconds)}`;
+  return parts.days > 0 ? `${format.digits(parts.days)}:${clock}` : clock;
+}
+
+function countdownText(exam, now, t, format) {
+  const parts = countdownParts(exam, now);
+  if (!parts) return t('countdown.now');
+  if (parts.days > 0) {
+    return t('countdown.daysHours', { days: format.num(parts.days), hours: format.num(parts.hours) });
+  }
+  if (parts.hours > 0) {
+    return t('countdown.hoursMinutes', { hours: format.num(parts.hours), minutes: format.num(parts.minutes) });
+  }
+  return t('countdown.minutesLeft', { minutes: format.num(parts.minutes) });
+}
+
+/* exam → "امروز" / "فردا" / "n روز مانده" / "برگزار شده" */
+function remainingLabel(exam, now, t, format) {
   const days = daysUntil(exam.date, now);
   if (!Number.isFinite(days)) return '';
-  if (days < 0) return 'برگزار شده';
-  if (days === 0) return 'امروز';
-  if (days === 1) return 'فردا';
-  return `${faNumber(days)} روز مانده`;
+  if (days < 0) return t('countdown.passed');
+  if (days === 0) return t('exams.today');
+  if (days === 1) return t('exams.tomorrow');
+  return t('exams.daysLeft', { count: format.num(days) });
 }
 
 /* ---------- file helpers ---------- */
@@ -276,6 +348,11 @@ function buildIcs(exams) {
     const start = exam.date.replace(/-/g, '');
     const end = parseLocalDate(exam.date);
     end.setDate(end.getDate() + 1);
+    /* The topic checklist travels inside the description, so nothing is lost. */
+    const notes = [exam.description];
+    if (exam.topics.length) {
+      notes.push(exam.topics.map((topic) => `${topic.done ? '[x]' : '[ ]'} ${topic.title}`).join('\n'));
+    }
     lines.push(
       'BEGIN:VEVENT',
       `UID:${exam.id}@taghvim`,
@@ -283,7 +360,7 @@ function buildIcs(exams) {
       `DTSTART;VALUE=DATE:${start}`,
       `DTEND;VALUE=DATE:${toInput(end).replace(/-/g, '')}`,
       `SUMMARY:${escape(exam.name)}`,
-      `DESCRIPTION:${escape(exam.description || exam.name)}`,
+      `DESCRIPTION:${escape(notes.filter(Boolean).join('\n\n') || exam.name)}`,
       'BEGIN:VALARM',
       'TRIGGER:-P1D',
       'ACTION:DISPLAY',
@@ -309,6 +386,7 @@ class ErrorBoundary extends Component {
 
   render() {
     if (this.state.error) {
+      const t = translator(loadLanguage());
       const hardReset = () => {
         try {
           localStorage.removeItem(PLANS_KEY);
@@ -317,13 +395,13 @@ class ErrorBoundary extends Component {
         window.location.reload();
       };
       return (
-        <div className="fatal" dir="rtl">
+        <div className="fatal" dir={getLanguage(loadLanguage()).dir}>
           <div className="fatal-icon"><CalendarDays size={34} /></div>
-          <h1>مشکلی پیش آمد</h1>
-          <p>اطلاعاتت حذف نشده؛ یک‌بار صفحه را تازه کن. اگر مشکل ادامه داشت، داده‌های ناسازگار را پاک کن.</p>
+          <h1>{t('fatal.title')}</h1>
+          <p>{t('fatal.desc')}</p>
           <div className="fatal-actions">
-            <button className="button primary" onClick={() => window.location.reload()}>تلاش دوباره</button>
-            <button className="button secondary" onClick={hardReset}>پاک‌سازی داده‌ها</button>
+            <button className="button primary" onClick={() => window.location.reload()}>{t('fatal.retry')}</button>
+            <button className="button secondary" onClick={hardReset}>{t('fatal.reset')}</button>
           </div>
         </div>
       );
@@ -377,7 +455,7 @@ function useDialog(onClose) {
   return ref;
 }
 
-function StickerPicker({ value = '', onChange, onSelect, label, compact = false }) {
+function StickerPicker({ value = '', onChange, onSelect, label, compact = false, t }) {
   const sticker = normalizeSticker(value);
   const chooseSticker = (nextSticker) => (onSelect || onChange)?.(nextSticker);
 
@@ -386,17 +464,17 @@ function StickerPicker({ value = '', onChange, onSelect, label, compact = false 
       <legend>{label}</legend>
       {!compact && (
         <div className="sticker-preview-row">
-          <span className="sticker-preview-label">{sticker ? 'پیش‌نمایش' : 'اختیاری'}</span>
+          <span className="sticker-preview-label">{sticker ? t('sticker.preview') : t('sticker.optional')}</span>
           <span className="sticker-preview" aria-hidden="true">{sticker || '＋'}</span>
         </div>
       )}
-      <div className="sticker-options" aria-label="استیکرهای پیشنهادی">
+      <div className="sticker-options" aria-label={t('sticker.options')}>
         {stickerOptions.map((option) => (
           <button
             key={option}
             className={sticker === option ? 'selected' : ''}
             type="button"
-            aria-label={`انتخاب استیکر ${option}`}
+            aria-label={t('sticker.choose', { sticker: option })}
             aria-pressed={sticker === option}
             title={option}
             onClick={() => chooseSticker(option)}
@@ -407,28 +485,28 @@ function StickerPicker({ value = '', onChange, onSelect, label, compact = false 
       </div>
       <div className="sticker-custom-row">
         <label className="sticker-custom-field">
-          <span>ایموجی دلخواه</span>
+          <span>{t('sticker.custom')}</span>
           <input
             type="text"
             maxLength={24}
             value={sticker}
             onChange={(event) => onChange?.(normalizeSticker(event.target.value))}
-            placeholder="اینجا انتخاب یا جای‌گذاری کن"
-            aria-label={`${label} دلخواه`}
+            placeholder={t('sticker.customPlaceholder')}
+            aria-label={t('sticker.customLabel', { label })}
           />
         </label>
         {sticker && (
-          <button className="sticker-clear" type="button" onClick={() => chooseSticker('')} aria-label={`حذف ${label}`}>
-            پاک کردن
+          <button className="sticker-clear" type="button" onClick={() => chooseSticker('')} aria-label={t('sticker.remove', { label })}>
+            {t('sticker.clear')}
           </button>
         )}
       </div>
-      {!compact && <small className="sticker-hint">می‌توانی از استیکرهای بالا انتخاب کنی یا ایموجی دلخواهت را وارد کنی.</small>}
+      {!compact && <small className="sticker-hint">{t('sticker.hint')}</small>}
     </fieldset>
   );
 }
 
-function Modal({ data, onClose, onPlan, onExam }) {
+function Modal({ data, onClose, onPlan, onExam, t, format }) {
   const isExam = data.type === 'exam';
   const isEditing = Boolean(data.id);
   const dialogRef = useDialog(onClose);
@@ -444,7 +522,7 @@ function Modal({ data, onClose, onPlan, onExam }) {
     description: String(data.description ?? data.desc ?? ''),
   });
 
-  const title = `${isEditing ? 'ویرایش' : 'افزودن'} ${isExam ? 'امتحان' : 'برنامه'}`;
+  const heading = `${isEditing ? t('action.edit') : t('action.add')} ${isExam ? t('word.exam') : t('word.plan')}`;
   const label = isExam ? value.name : value.title;
   const canSubmit = label.trim().length > 0 && (!isExam || Boolean(value.date));
 
@@ -481,58 +559,62 @@ function Modal({ data, onClose, onPlan, onExam }) {
       >
         <div className="modal-head">
           <div>
-            <span className="eyebrow">{isExam ? 'تقویم آزمون‌ها' : 'برنامه هفتگی'}</span>
-            <h2 id="modal-title">{title}</h2>
+            <span className="eyebrow">{isExam ? t('modal.eyebrowExam') : t('modal.eyebrowPlan')}</span>
+            <h2 id="modal-title">{heading}</h2>
           </div>
-          <button className="close-button" type="button" onClick={onClose} aria-label="بستن"><X size={20} /></button>
+          <button className="close-button" type="button" onClick={onClose} aria-label={t('action.close')}><X size={20} /></button>
         </div>
 
         <label className="field">
-          <span>{isExam ? 'نام امتحان' : 'عنوان برنامه'}</span>
+          <span>{isExam ? t('modal.examName') : t('modal.planTitle')}</span>
           <input
             autoFocus
             required
             maxLength={80}
             value={label}
             onChange={(event) => setValue({ ...value, [isExam ? 'name' : 'title']: event.target.value })}
-            placeholder={isExam ? 'مثلاً امتحان ریاضی' : 'مثلاً مرور فصل سوم'}
+            placeholder={isExam ? t('modal.examNamePlaceholder') : t('modal.planTitlePlaceholder')}
           />
         </label>
 
         {isExam ? (
-          <label className="field">
-            <span>تاریخ امتحان</span>
-            <input required type="date" value={value.date} onChange={(event) => setValue({ ...value, date: event.target.value })} />
-          </label>
+          <DateField
+            label={t('modal.examDate')}
+            value={value.date}
+            onChange={(date) => setValue({ ...value, date })}
+            t={t}
+            format={format}
+          />
         ) : (
           <div className="field-row">
             <label className="field">
-              <span>روز هفته</span>
+              <span>{t('modal.dayOfWeek')}</span>
               <select value={value.day} onChange={(event) => setValue({ ...value, day: event.target.value })}>
-                {faDays.map((day, index) => <option value={index} key={day}>{day}</option>)}
+                {format.days.map((day) => <option value={day.index} key={day.name}>{day.name}</option>)}
               </select>
             </label>
             <label className="field">
-              <span>ساعت <small>اختیاری</small></span>
+              <span>{t('modal.time')} <small>{t('modal.optional')}</small></span>
               <input type="time" value={value.time} onChange={(event) => setValue({ ...value, time: event.target.value })} />
             </label>
           </div>
         )}
 
         <label className="field description-field">
-          <span>توضیحات <small>اختیاری</small></span>
+          <span>{t('modal.description')} <small>{t('modal.optional')}</small></span>
           <textarea
             value={value.description}
             maxLength={500}
             rows={3}
             onChange={(event) => setValue({ ...value, description: event.target.value })}
-            placeholder={isExam ? 'نکته‌ها یا جزئیات این امتحان را بنویس…' : 'نکته‌ها یا جزئیات این برنامه را بنویس…'}
+            placeholder={isExam ? t('modal.examDescriptionPlaceholder') : t('modal.planDescriptionPlaceholder')}
           />
         </label>
 
         {!isExam && (
           <StickerPicker
-            label="استیکر برنامه"
+            t={t}
+            label={t('modal.planSticker')}
             value={value.sticker}
             onChange={(sticker) => setValue((current) => ({ ...current, sticker }))}
           />
@@ -540,7 +622,7 @@ function Modal({ data, onClose, onPlan, onExam }) {
 
         {!isExam && (
           <fieldset className="color-field">
-            <legend>رنگ برنامه</legend>
+            <legend>{t('modal.planColor')}</legend>
             <div className="color-options">
               {planColors.map((color) => (
                 <button
@@ -549,7 +631,7 @@ function Modal({ data, onClose, onPlan, onExam }) {
                   style={{ '--swatch': color }}
                   type="button"
                   aria-pressed={value.color === color}
-                  aria-label={`انتخاب رنگ ${color}`}
+                  aria-label={t('modal.colorOption', { color })}
                   onClick={() => setValue({ ...value, color })}
                 >
                   {value.color === color && <CheckCircle2 size={17} />}
@@ -560,9 +642,9 @@ function Modal({ data, onClose, onPlan, onExam }) {
         )}
 
         <div className="modal-actions">
-          <button className="button secondary" type="button" onClick={onClose}>انصراف</button>
+          <button className="button secondary" type="button" onClick={onClose}>{t('action.cancel')}</button>
           <button className="button primary" type="submit" disabled={!canSubmit}>
-            {isEditing ? 'ذخیره تغییرات' : 'افزودن به تقویم'}
+            {isEditing ? t('action.save') : t('action.addToCalendar')}
           </button>
         </div>
       </form>
@@ -571,18 +653,20 @@ function Modal({ data, onClose, onPlan, onExam }) {
 }
 
 function SettingsPanel({
-  theme, setTheme, fontScale, setFontScale, plansCount, examsCount, examTotal,
+  theme, setTheme, fontScale, setFontScale, lang, setLang,
+  plansCount, examsCount, examTotal,
   onExport, onExportIcs, onImport, onClearAll, onClose,
+  t, format,
 }) {
   const dialogRef = useDialog(onClose);
   const fileRef = useRef(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const fontScaleIndex = FONT_SCALE_OPTIONS.indexOf(fontScale);
 
-  const options = [
-    { id: 'auto', label: 'خودکار', icon: Monitor },
-    { id: 'light', label: 'روشن', icon: Sun },
-    { id: 'dark', label: 'تیره', icon: Moon },
+  const themes = [
+    { id: 'auto', label: t('settings.theme.auto'), icon: Monitor },
+    { id: 'light', label: t('settings.theme.light'), icon: Sun },
+    { id: 'dark', label: t('settings.theme.dark'), icon: Moon },
   ];
 
   return (
@@ -590,19 +674,39 @@ function SettingsPanel({
       <section className="modal settings-modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div className="modal-head">
           <div>
-            <span className="eyebrow">شخصی‌سازی</span>
-            <h2 id="settings-title">تنظیمات تقویم</h2>
+            <span className="eyebrow">{t('settings.eyebrow')}</span>
+            <h2 id="settings-title">{t('settings.title')}</h2>
           </div>
-          <button className="close-button" onClick={onClose} aria-label="بستن"><X size={20} /></button>
+          <button className="close-button" onClick={onClose} aria-label={t('action.close')}><X size={20} /></button>
         </div>
 
         <div className="setting-block">
           <div className="setting-copy">
-            <b>ظاهر برنامه</b>
-            <span>حالت مناسب چشم و دستگاهت را انتخاب کن.</span>
+            <b><Languages size={14} /> {t('settings.language')}</b>
+            <span>{t('settings.languageHint')}</span>
+          </div>
+          <div className="language-options" role="group" aria-label={t('settings.language')}>
+            {languages.map((language) => (
+              <button
+                key={language.id}
+                className={lang === language.id ? 'selected' : ''}
+                aria-pressed={lang === language.id}
+                lang={language.id}
+                onClick={() => setLang(language.id)}
+              >
+                <span>{language.nativeLabel}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="setting-block">
+          <div className="setting-copy">
+            <b>{t('settings.theme')}</b>
+            <span>{t('settings.themeHint')}</span>
           </div>
           <div className="theme-options">
-            {options.map(({ id, label, icon: Icon }) => (
+            {themes.map(({ id, label, icon: Icon }) => (
               <button key={id} className={theme === id ? 'selected' : ''} aria-pressed={theme === id} onClick={() => setTheme(id)}>
                 <Icon size={19} />
                 <span>{label}</span>
@@ -613,45 +717,45 @@ function SettingsPanel({
 
         <div className="setting-block font-setting">
           <div className="setting-copy">
-            <b>اندازه‌ی نوشته‌ها</b>
-            <span>اندازه‌ی فونت برنامه را کوچک‌تر یا بزرگ‌تر کن.</span>
+            <b>{t('settings.font')}</b>
+            <span>{t('settings.fontHint')}</span>
           </div>
-          <div className="font-scale-control" role="group" aria-label="تنظیم اندازه‌ی نوشته‌ها">
+          <div className="font-scale-control" role="group" aria-label={t('settings.font')}>
             <button
               className="font-scale-button"
               type="button"
-              aria-label="کوچک‌تر کردن فونت"
+              aria-label={t('settings.fontSmaller')}
               disabled={fontScaleIndex <= 0}
               onClick={() => setFontScale((current) => {
                 const index = FONT_SCALE_OPTIONS.indexOf(current);
                 return FONT_SCALE_OPTIONS[Math.max(0, index - 1)];
               })}
-            ><span aria-hidden="true">ا</span><Minus size={16} /></button>
-            <strong aria-live="polite">{faNumber(Math.round(fontScale * 100))}٪</strong>
+            ><span aria-hidden="true">{lang === 'fa' ? 'ا' : 'A'}</span><Minus size={16} /></button>
+            <strong aria-live="polite">{format.num(Math.round(fontScale * 100))}{t('format.percent')}</strong>
             <button
               className="font-scale-button"
               type="button"
-              aria-label="بزرگ‌تر کردن فونت"
+              aria-label={t('settings.fontBigger')}
               disabled={fontScaleIndex >= FONT_SCALE_OPTIONS.length - 1}
               onClick={() => setFontScale((current) => {
                 const index = FONT_SCALE_OPTIONS.indexOf(current);
                 return FONT_SCALE_OPTIONS[Math.min(FONT_SCALE_OPTIONS.length - 1, index + 1)];
               })}
-            ><span aria-hidden="true">ا</span><Plus size={16} /></button>
+            ><span aria-hidden="true">{lang === 'fa' ? 'ا' : 'A'}</span><Plus size={16} /></button>
           </div>
         </div>
 
         <div className="setting-block data-setting">
           <div className="setting-copy">
-            <b>پشتیبان و انتقال اطلاعات</b>
-            <span>{faNumber(plansCount)} برنامه و {faNumber(examsCount)} امتحان روی همین دستگاه ذخیره شده.</span>
+            <b>{t('settings.data')}</b>
+            <span>{t('settings.dataHint', { plans: format.num(plansCount), exams: format.num(examsCount) })}</span>
           </div>
           <div className="setting-buttons">
             <button className="button secondary" onClick={onExport}>
-              <Download size={17} /> گرفتن پشتیبان
+              <Download size={17} /> {t('settings.export')}
             </button>
             <button className="button secondary" onClick={() => fileRef.current?.click()}>
-              <Upload size={17} /> بازگردانی پشتیبان
+              <Upload size={17} /> {t('settings.import')}
             </button>
           </div>
           <input
@@ -659,7 +763,7 @@ function SettingsPanel({
             className="file-input"
             type="file"
             accept="application/json,.json"
-            aria-label="انتخاب فایل پشتیبان"
+            aria-label={t('settings.file')}
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.target.value = '';
@@ -667,49 +771,50 @@ function SettingsPanel({
             }}
           />
           <button className="button secondary wide-setting-button" onClick={onExportIcs} disabled={!examTotal}>
-            <CalendarPlus size={17} /> خروجی امتحان‌ها برای گوگل‌کلندر (ICS)
+            <CalendarPlus size={17} /> {t('settings.ics')}
           </button>
         </div>
 
         <div className="setting-block danger-setting">
           <div className="setting-copy">
-            <b>پاک‌سازی کامل</b>
-            <span>همه برنامه‌ها و امتحان‌های این دستگاه حذف می‌شود. قبلش پشتیبان بگیر.</span>
+            <b>{t('settings.clear')}</b>
+            <span>{t('settings.clearHint')}</span>
           </div>
           {confirmClear ? (
             <div className="setting-buttons">
-              <button className="button secondary" onClick={() => setConfirmClear(false)}>انصراف</button>
+              <button className="button secondary" onClick={() => setConfirmClear(false)}>{t('action.cancel')}</button>
               <button className="button danger-button" onClick={() => { setConfirmClear(false); onClearAll(); }}>
-                <Trash2 size={17} /> بله، همه را پاک کن
+                <Trash2 size={17} /> {t('settings.clearConfirm')}
               </button>
             </div>
           ) : (
             <button className="button secondary wide-setting-button" onClick={() => setConfirmClear(true)} disabled={!plansCount && !examsCount}>
-              <Trash2 size={17} /> پاک کردن همه داده‌ها
+              <Trash2 size={17} /> {t('settings.clearStart')}
             </button>
           )}
         </div>
 
         <div className="setting-block shortcut-setting">
           <div className="setting-copy">
-            <b><Keyboard size={14} /> میان‌برهای صفحه‌کلید</b>
-            <span>روی کامپیوتر سریع‌تر کار کن.</span>
+            <b><Keyboard size={14} /> {t('settings.shortcuts')}</b>
+            <span>{t('settings.shortcutsHint')}</span>
           </div>
           <ul className="shortcut-list">
-            <li><kbd>N</kbd><span>افزودن مورد تازه</span></li>
-            <li><kbd>/</kbd><span>جست‌وجو</span></li>
-            <li><kbd>۱</kbd> <kbd>۲</kbd><span>جابه‌جایی بین هفته و امتحان‌ها</span></li>
-            <li><kbd>Esc</kbd><span>بستن پنجره‌ها</span></li>
+            <li><kbd>N</kbd><span>{t('settings.shortcut.add')}</span></li>
+            <li><kbd>/</kbd><span>{t('settings.shortcut.search')}</span></li>
+            <li><kbd>{format.digits(1)}</kbd> <kbd>{format.digits(2)}</kbd><span>{t('settings.shortcut.tabs')}</span></li>
+            <li><kbd>Esc</kbd><span>{t('settings.shortcut.close')}</span></li>
+            <li><kbd className="kbd-icon"><GripVertical size={11} /></kbd><span>{t('settings.shortcut.drag')}</span></li>
           </ul>
         </div>
 
-        <p className="privacy-note">همه اطلاعات فقط روی دستگاه تو نگهداری می‌شود و به سروری ارسال نمی‌شود.</p>
+        <p className="privacy-note">{t('settings.privacy')}</p>
       </section>
     </div>
   );
 }
 
-function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange }) {
+function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange, t }) {
   const [draft, setDraft] = useState('');
   const [stickerTaskId, setStickerTaskId] = useState(null);
   const canAdd = draft.trim().length > 0 && plan.tasks.length < 40;
@@ -728,8 +833,8 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange 
                     className="plan-check task-check"
                     type="button"
                     aria-pressed={isDone}
-                    aria-label={`${isDone ? 'برگرداندن' : 'انجام شد'}: ${task.title}`}
-                    title={isDone ? 'انجام‌نشده کن' : 'انجام شد'}
+                    aria-label={t(isDone ? 'task.markUndone' : 'task.markDone', { title: task.title })}
+                    title={isDone ? t('task.undoTitle') : t('task.doneTitle')}
                     onClick={() => onToggle(plan.id, task.id)}
                   >
                     {isDone && <Check size={11} strokeWidth={3.4} />}
@@ -737,10 +842,10 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange 
                   <button
                     className={`task-number ${task.sticker ? 'custom' : ''}`}
                     type="button"
-                    aria-label={`${task.sticker ? 'تغییر' : 'انتخاب'} استیکر زیرتسک ${task.title}`}
+                    aria-label={t(task.sticker ? 'task.stickerChange' : 'task.stickerChoose', { title: task.title })}
                     aria-expanded={stickerTaskId === task.id}
                     aria-haspopup="true"
-                    title="برای تغییر استیکر کلیک کن"
+                    title={t('task.stickerHint')}
                     onClick={() => setStickerTaskId((current) => (current === task.id ? null : task.id))}
                   >
                     {displayedSticker}
@@ -749,7 +854,7 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange 
                   <button
                     className="task-delete"
                     type="button"
-                    aria-label={`حذف ${task.title}`}
+                    aria-label={t('task.remove', { title: task.title })}
                     onClick={() => onRemove(plan.id, task.id)}
                   >
                     <X size={12} />
@@ -757,8 +862,9 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange 
                 </div>
                 {stickerTaskId === task.id && (
                   <StickerPicker
+                    t={t}
                     compact
-                    label={`استیکر زیرتسک ${task.title}`}
+                    label={t('task.stickerChange', { title: task.title })}
                     value={task.sticker}
                     onChange={(sticker) => onStickerChange(plan.id, task.id, sticker)}
                     onSelect={(sticker) => {
@@ -785,10 +891,10 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange 
           value={draft}
           maxLength={80}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder={plan.tasks.length ? 'زیرتسک تازه…' : 'اولین زیرتسک را بنویس…'}
-          aria-label={`افزودن زیرتسک به ${plan.title}`}
+          placeholder={plan.tasks.length ? t('task.addPlaceholder') : t('task.firstPlaceholder')}
+          aria-label={t('task.addTo', { title: plan.title })}
         />
-        <button type="submit" disabled={!canAdd} aria-label="افزودن زیرتسک">
+        <button type="submit" disabled={!canAdd} aria-label={t('task.add')}>
           <Plus size={14} />
         </button>
       </form>
@@ -796,23 +902,81 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange 
   );
 }
 
-function EmptyState({ type, onAdd, searching }) {
+/* Checklist of the topics that belong to one exam — lives inside the exam card. */
+function ExamTopics({ exam, onToggle, onAdd, onRemove, t }) {
+  const [draft, setDraft] = useState('');
+  const canAdd = draft.trim().length > 0 && exam.topics.length < 60;
+
+  return (
+    <div className="exam-topics">
+      {exam.topics.length > 0 && (
+        <ul className="topic-list">
+          {exam.topics.map((topic) => (
+            <li key={topic.id} className={`topic-item ${topic.done ? 'done' : ''}`}>
+              <button
+                className="plan-check topic-check"
+                type="button"
+                aria-pressed={topic.done}
+                aria-label={t(topic.done ? 'topics.markUndone' : 'topics.markDone', { title: topic.title })}
+                title={topic.done ? t('topics.undoTitle') : t('topics.doneTitle')}
+                onClick={() => onToggle(exam.id, topic.id)}
+              >
+                {topic.done && <Check size={11} strokeWidth={3.4} />}
+              </button>
+              <span className="topic-title">{topic.title}</span>
+              <button
+                className="topic-delete"
+                type="button"
+                aria-label={t('topics.remove', { title: topic.title })}
+                onClick={() => onRemove(exam.id, topic.id)}
+              >
+                <X size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="task-add"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canAdd) return;
+          onAdd(exam.id, draft.trim());
+          setDraft('');
+        }}
+      >
+        <input
+          value={draft}
+          maxLength={80}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={exam.topics.length ? t('topics.addPlaceholder') : t('topics.firstPlaceholder')}
+          aria-label={t('topics.addTo', { name: exam.name })}
+        />
+        <button type="submit" disabled={!canAdd} aria-label={t('topics.add')}>
+          <Plus size={14} />
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function EmptyState({ type, onAdd, searching, t }) {
   const isExam = type === 'exam';
   if (searching) {
     return (
       <div className="blank-state">
         <div className="blank-icon"><Search size={27} /></div>
-        <b>چیزی پیدا نشد</b>
-        <span>عبارت دیگری را امتحان کن یا جست‌وجو را پاک کن.</span>
+        <b>{t('search.empty')}</b>
+        <span>{t('search.emptyHint')}</span>
       </div>
     );
   }
   return (
     <div className="blank-state">
       <div className="blank-icon">{isExam ? <ClipboardList size={29} /> : <BookOpenCheck size={27} />}</div>
-      <b>{isExam ? 'فعلاً امتحانی در پیش نیست' : 'این روز هنوز خلوت است'}</b>
-      <span>{isExam ? 'با خیال راحت برنامه‌ریزی کن؛ امتحان بعدی را هم می‌توانی ثبت کنی.' : 'یک برنامه کوتاه اضافه کن تا از روزت بهترین استفاده را ببری.'}</span>
-      <button className="text-button" onClick={onAdd}><Plus size={16} />{isExam ? 'ثبت اولین امتحان' : 'افزودن برنامه'}</button>
+      <b>{isExam ? t('exams.empty') : t('empty.day')}</b>
+      <span>{isExam ? t('exams.emptyHint') : t('empty.dayHint')}</span>
+      <button className="text-button" onClick={onAdd}><Plus size={16} />{isExam ? t('exams.firstExam') : t('empty.addPlan')}</button>
     </div>
   );
 }
@@ -826,12 +990,17 @@ function App() {
   const [modal, setModal] = useState(null);
   const [menu, setMenu] = useState(null);
   const [expandedPlan, setExpandedPlan] = useState(null);
+  const [expandedExam, setExpandedExam] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState(loadTheme);
   const [fontScale, setFontScale] = useState(loadFontScale);
+  const [lang, setLang] = useState(loadLanguage);
   const [toast, setToast] = useState(null);
   const [queryText, setQueryText] = useState('');
   const searchRef = useRef(null);
+
+  const t = useMemo(() => translator(lang), [lang]);
+  const format = useMemo(() => createFormat(lang), [lang]);
 
   // Braces matter: saveList returns a boolean and React would treat it as a cleanup function.
   useEffect(() => { saveList(PLANS_KEY, plans); }, [plans]);
@@ -861,6 +1030,14 @@ function App() {
     document.documentElement.style.setProperty('--font-scale', String(fontScale));
     try { localStorage.setItem(FONT_SCALE_KEY, String(fontScale)); } catch { /* ignore */ }
   }, [fontScale]);
+
+  /* Language: text direction, document language and the calendar all follow it. */
+  useEffect(() => {
+    const config = getLanguage(lang);
+    document.documentElement.lang = lang;
+    document.documentElement.dir = config.dir;
+    saveLanguage(lang);
+  }, [lang]);
 
   /* Stay in sync when the app is open in another tab or window. */
   useEffect(() => {
@@ -896,12 +1073,12 @@ function App() {
     const start = new Date(now);
     start.setHours(0, 0, 0, 0);
     start.setDate(start.getDate() - dayIndex(start));
-    return faDays.map((name, index) => {
+    return format.days.map((day) => {
       const date = new Date(start);
-      date.setDate(date.getDate() + index);
-      return { name, date, today: date.toDateString() === now.toDateString(), index };
+      date.setDate(date.getDate() + day.index);
+      return { ...day, date, today: date.toDateString() === now.toDateString() };
     });
-  }, [now]);
+  }, [now, format]);
 
   const thisWeek = useMemo(() => weekStartKey(now), [now]);
   const needle = queryText.trim().toLowerCase();
@@ -925,11 +1102,11 @@ function App() {
     .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date)), [exams, now]);
 
   const visibleUpcoming = useMemo(
-    () => upcoming.filter((exam) => matchesQuery(exam.name, exam.description)),
+    () => upcoming.filter((exam) => matchesQuery(exam.name, exam.description, ...exam.topics.map((topic) => topic.title))),
     [upcoming, matchesQuery],
   );
   const visiblePast = useMemo(
-    () => past.filter((exam) => matchesQuery(exam.name, exam.description)),
+    () => past.filter((exam) => matchesQuery(exam.name, exam.description, ...exam.topics.map((topic) => topic.title))),
     [past, matchesQuery],
   );
 
@@ -954,6 +1131,14 @@ function App() {
           : null;
   const alertExam = alertLevel ? nextExam : null;
   const tomorrow = upcoming.find((exam) => daysUntil(exam.date, now) === 1);
+
+  /* The live countdown needs a one-second tick — but only while it is on screen. */
+  const liveCountdown = Boolean(nextExam) && daysUntil(nextExam.date, now) <= 2;
+  useEffect(() => {
+    if (!liveCountdown) return undefined;
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, [liveCountdown]);
 
   /* Appearance: apply the resolved theme, browser UI colour, and exam-alert accent. */
   useEffect(() => {
@@ -994,6 +1179,119 @@ function App() {
     setTab(nextTab);
     setMenu(null);
   }, []);
+
+  /* ---------- drag & drop: reorder inside a day, and move between days ---------- */
+  const [drag, setDrag] = useState(null); // { id, day, index } — where the card would land
+  const dragRef = useRef({ id: null, active: false, target: null, startX: 0, startY: 0 });
+  const plansRef = useRef(plans);
+  plansRef.current = plans;
+
+  const beginDrag = useCallback((event, plan) => {
+    if (needle || dragRef.current.id) return; // reordering a filtered list makes no sense
+    if (typeof event.button === 'number' && event.button > 0) return;
+    dragRef.current = {
+      id: plan.id,
+      active: false,
+      target: null,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  }, [needle]);
+
+  useEffect(() => {
+    /* Hit-testing: elementFromPoint when the browser has it, the event target otherwise. */
+    const findTarget = (event) => {
+      const point = document.elementFromPoint?.(event.clientX, event.clientY);
+      const element = point || event.target;
+      const zone = element?.closest?.('[data-drop-day]');
+      if (!zone) return null;
+      const day = Number(zone.dataset.dropDay);
+      if (!Number.isInteger(day) || day < 0 || day > 6) return null;
+      /* Dropping on a day chip (mobile) appends to the end of that day. */
+      if (zone.dataset.dropAppend === 'true') {
+        return { day, index: plansRef.current.filter((plan) => Number(plan.day) === day).length, append: true };
+      }
+      const cards = [...zone.querySelectorAll('[data-plan-id]')]
+        .filter((card) => card.dataset.planId !== dragRef.current.id);
+      let index = cards.length;
+      for (let position = 0; position < cards.length; position += 1) {
+        const box = cards[position].getBoundingClientRect();
+        if (event.clientY < box.top + (box.height / 2)) {
+          index = position;
+          break;
+        }
+      }
+      return { day, index, append: false };
+    };
+
+    const clearDrag = () => {
+      dragRef.current = { id: null, active: false, target: null, startX: 0, startY: 0 };
+      document.body.classList.remove('plan-dragging');
+      setDrag(null);
+    };
+
+    const onMove = (event) => {
+      const state = dragRef.current;
+      if (!state.id) return;
+      if (!state.active) {
+        if (Math.abs(event.clientX - state.startX) < 6 && Math.abs(event.clientY - state.startY) < 6) return;
+        state.active = true;
+        document.body.classList.add('plan-dragging');
+        setMenu(null);
+      }
+      if (event.cancelable) event.preventDefault();
+      /* Keep long days reachable: scroll the page while dragging near an edge. */
+      const scroller = document.scrollingElement;
+      if (scroller && scroller.scrollHeight > (window.innerHeight + 40)) {
+        const edge = 72;
+        if (event.clientY < edge) scroller.scrollTop -= 14;
+        else if (event.clientY > window.innerHeight - edge) scroller.scrollTop += 14;
+      }
+      const target = findTarget(event);
+      if (!target) return;
+      state.target = target;
+      if (target.append) setSelectedDay(target.day); // mobile: preview the day you are aiming at
+      setDrag((current) => (
+        current && current.id === state.id && current.day === target.day && current.index === target.index
+          ? current
+          : { id: state.id, day: target.day, index: target.index }
+      ));
+    };
+
+    const onUp = () => {
+      const state = dragRef.current;
+      if (!state.id) return;
+      const { id, active, target } = state;
+      const previousPlans = plansRef.current;
+      clearDrag();
+      if (!active || !target) return;
+      const plan = previousPlans.find((item) => item.id === id);
+      setPlans((items) => movePlanToPosition(items, id, target.day, target.index, thisWeek));
+      setSelectedDay(target.day);
+      /* Moving to another day is worth an undoable note; a plain reorder is visible enough. */
+      if (plan && Number(plan.day) !== target.day) {
+        notify(t('toast.planMoved'), () => setPlans(previousPlans));
+      }
+    };
+
+    const onCancel = () => {
+      if (dragRef.current.id) clearDrag();
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onCancel();
+    };
+
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [notify, t, thisWeek]);
 
   /* Keyboard shortcuts — ignored while typing or when a dialog is open. */
   useEffect(() => {
@@ -1038,7 +1336,7 @@ function App() {
     });
     setModal(null);
     setSelectedDay(plan.day);
-    notify(editing ? 'تغییرات برنامه ذخیره شد' : 'برنامه به هفته‌ات اضافه شد');
+    notify(editing ? t('toast.planSaved') : t('toast.planAdded'));
   }
 
   function saveExam(data) {
@@ -1046,10 +1344,10 @@ function App() {
     const exam = normalizeExam(data);
     if (!exam) return;
     setExams((items) => (editing
-      ? items.map((item) => (item.id === data.id ? { ...exam, id: item.id } : item))
+      ? items.map((item) => (item.id === data.id ? { ...exam, id: item.id, topics: item.topics } : item))
       : [...items, exam]));
     setModal(null);
-    notify(editing ? 'تغییرات امتحان ذخیره شد' : 'امتحان به تقویمت اضافه شد');
+    notify(editing ? t('toast.examSaved') : t('toast.examAdded'));
   }
 
   function addTask(planId, title) {
@@ -1088,6 +1386,36 @@ function App() {
     )));
   }
 
+  /* ---------- exam topics ---------- */
+  function addTopic(examId, title) {
+    const text = String(title || '').trim().slice(0, 80);
+    if (!text) return;
+    setExams((items) => items.map((exam) => (
+      exam.id !== examId || exam.topics.length >= 60
+        ? exam
+        : { ...exam, topics: [...exam.topics, { id: uid(), title: text, done: false }] }
+    )));
+  }
+
+  function toggleTopic(examId, topicId) {
+    setExams((items) => items.map((exam) => (
+      exam.id !== examId
+        ? exam
+        : {
+          ...exam,
+          topics: exam.topics.map((topic) => (
+            topic.id === topicId ? { ...topic, done: !topic.done } : topic
+          )),
+        }
+    )));
+  }
+
+  function removeTopic(examId, topicId) {
+    setExams((items) => items.map((exam) => (
+      exam.id !== examId ? exam : { ...exam, topics: exam.topics.filter((topic) => topic.id !== topicId) }
+    )));
+  }
+
   /* Swaps the position with the neighbour above/below inside the same day (and same completed group). */
   function movePlan(id, direction) {
     setPlans((items) => {
@@ -1117,7 +1445,7 @@ function App() {
       tasks: source.tasks.map((task) => ({ ...task, id: uid(), done: '' })),
     }));
     setMenu(null);
-    notify('یک کپی از برنامه ساخته شد');
+    notify(t('toast.planDuplicated'));
   }
 
   function removePlan(id) {
@@ -1126,7 +1454,7 @@ function App() {
     setPlans((items) => items.filter((plan) => plan.id !== id));
     setMenu(null);
     if (removed) {
-      notify('برنامه حذف شد', () => setPlans((items) => {
+      notify(t('toast.planRemoved'), () => setPlans((items) => {
         if (items.some((item) => item.id === removed.id)) return items;
         const restored = [...items];
         restored.splice(Math.max(index, 0), 0, removed);
@@ -1141,7 +1469,7 @@ function App() {
     setExams((items) => items.filter((exam) => exam.id !== id));
     setMenu(null);
     if (removed) {
-      notify('امتحان حذف شد', () => setExams((items) => {
+      notify(t('toast.examRemoved'), () => setExams((items) => {
         if (items.some((item) => item.id === removed.id)) return items;
         const restored = [...items];
         restored.splice(Math.max(index, 0), 0, removed);
@@ -1156,22 +1484,22 @@ function App() {
     setPlans([]);
     setExams([]);
     setSettingsOpen(false);
-    notify('همه داده‌ها پاک شد', () => {
+    notify(t('toast.cleared'), () => {
       setPlans(previousPlans);
       setExams(previousExams);
     });
   }
 
   function exportData() {
-    const payload = JSON.stringify({ app: 'taghvim', version: 6, exportedAt: new Date().toISOString(), plans, exams }, null, 2);
+    const payload = JSON.stringify({ app: 'taghvim', version: 7, exportedAt: new Date().toISOString(), plans, exams }, null, 2);
     const okFile = downloadFile(`taghvim-backup-${toInput(new Date())}.json`, payload, 'application/json');
-    notify(okFile ? 'فایل پشتیبان آماده شد' : 'دریافت فایل در این مرورگر ممکن نشد');
+    notify(okFile ? t('toast.backupReady') : t('toast.backupFailed'));
   }
 
   function exportIcs() {
     if (!exams.length) return;
     const okFile = downloadFile(`taghvim-exams-${toInput(new Date())}.ics`, buildIcs(exams), 'text/calendar');
-    notify(okFile ? 'فایل تقویم امتحان‌ها آماده شد' : 'ساخت فایل تقویم ممکن نشد');
+    notify(okFile ? t('toast.icsReady') : t('toast.icsFailed'));
   }
 
   async function importData(file) {
@@ -1180,7 +1508,7 @@ function App() {
       const incomingPlans = (Array.isArray(raw) ? raw : raw?.plans || []).map(normalizePlan).filter(Boolean);
       const incomingExams = (Array.isArray(raw) ? [] : raw?.exams || []).map(normalizeExam).filter(Boolean);
       if (!incomingPlans.length && !incomingExams.length) {
-        notify('در این فایل برنامه یا امتحان معتبری پیدا نشد');
+        notify(t('toast.importEmpty'));
         return;
       }
       const previousPlans = plans;
@@ -1190,7 +1518,7 @@ function App() {
       const addedPlans = incomingPlans.filter((plan) => !planKeys.has(`${plan.title}|${plan.day}|${plan.time}`));
       const addedExams = incomingExams.filter((exam) => !examKeys.has(`${exam.name}|${exam.date}`));
       if (!addedPlans.length && !addedExams.length) {
-        notify('همه موارد این پشتیبان از قبل موجود بودند');
+        notify(t('toast.importDuplicate'));
         return;
       }
       setPlans((items) => addedPlans.reduce((current, plan) => placeInDay(current, {
@@ -1198,14 +1526,18 @@ function App() {
         id: uid(),
         tasks: plan.tasks.map((task) => ({ ...task, id: uid() })),
       }), items));
-      setExams((items) => [...items, ...addedExams.map((exam) => ({ ...exam, id: uid() }))]);
+      setExams((items) => [...items, ...addedExams.map((exam) => ({
+        ...exam,
+        id: uid(),
+        topics: exam.topics.map((topic) => ({ ...topic, id: uid() })),
+      }))]);
       setSettingsOpen(false);
       notify(
-        `${faNumber(addedPlans.length)} برنامه و ${faNumber(addedExams.length)} امتحان بازگردانی شد`,
+        t('toast.imported', { plans: format.num(addedPlans.length), exams: format.num(addedExams.length) }),
         () => { setPlans(previousPlans); setExams(previousExams); },
       );
     } catch {
-      notify('فایل پشتیبان خوانده نشد؛ یک فایل JSON معتبر انتخاب کن');
+      notify(t('toast.importFailed'));
     }
   }
 
@@ -1217,11 +1549,11 @@ function App() {
         type="search"
         value={queryText}
         onChange={(event) => setQueryText(event.target.value)}
-        placeholder={tab === 'week' ? 'جست‌وجو در برنامه‌ها…' : 'جست‌وجو در امتحان‌ها…'}
-        aria-label="جست‌وجو"
+        placeholder={tab === 'week' ? t('search.plans') : t('search.exams')}
+        aria-label={t('search.label')}
       />
       {queryText && (
-        <button type="button" className="search-clear" onClick={() => setQueryText('')} aria-label="پاک کردن جست‌وجو">
+        <button type="button" className="search-clear" onClick={() => setQueryText('')} aria-label={t('search.clear')}>
           <X size={14} />
         </button>
       )}
@@ -1232,34 +1564,38 @@ function App() {
     ? (alertLevel === 'critical' ? <AlertTriangle size={15} /> : <Flame size={15} />)
     : <Sparkles size={15} />;
   const kickerText = alertLevel === 'critical'
-    ? 'هشدار فوری — امتحان امروز'
+    ? t('hero.kicker.critical')
     : alertLevel === 'urgent'
-      ? `${remaining(alertExam, now)} تا امتحان`
+      ? t('hero.kicker.urgent', { remaining: countdownText(alertExam, now, t, format) })
       : alertLevel === 'soon'
-        ? 'امتحان در همین نزدیکی'
-        : (tab === 'week' ? 'هفته‌ات را بساز' : 'آماده و بی‌استرس');
+        ? t('hero.kicker.soon')
+        : (tab === 'week' ? t('hero.kicker.week') : t('hero.kicker.exams'));
   const heroTitle = alertLevel
     ? (nextDaysLeft <= 0
-      ? `امروز امتحان ${alertExam.name} داری!`
+      ? t('hero.title.examToday', { name: alertExam.name })
       : nextDaysLeft === 1
-        ? `فردا امتحان ${alertExam.name} داری`
-        : `${faNumber(nextDaysLeft)} روز به امتحان ${alertExam.name} مانده`)
-    : (tab === 'week' ? 'برای یک هفته‌ی خوب آماده‌ای؟' : 'امتحان‌ها، مرتب و جلوی چشم');
+        ? t('hero.title.examTomorrow', { name: alertExam.name })
+        : t('hero.title.examDays', { name: alertExam.name, count: format.num(nextDaysLeft) }))
+    : (tab === 'week' ? t('hero.title.week') : t('hero.title.exams'));
   const heroDesc = alertLevel
     ? (nextDaysLeft <= 0
-      ? 'امتحان همین امروز برگزار می‌شود. موفق باشی! کارت‌ها و جزوه‌های لازم را چک کن.'
+      ? t('hero.desc.examToday')
       : nextDaysLeft === 1
-        ? 'فقط یک روز فرصت باقی است. امروز یک مرور نهایی کن و استراحت خوبی داشته باش.'
-        : 'وقت طلایی مرور و جمع‌بندی است. با قدم‌های کوچک، آماده شو.')
+        ? t('hero.desc.examTomorrow')
+        : t('hero.desc.examDays'))
     : (tab === 'week'
       ? (todayPlans.length
         ? (todayTasks.length
-          ? `امروز ${faNumber(todayPlans.length)} برنامه داری و ${todayLeft ? `${faNumber(todayLeft)} زیرتسک هنوز مانده.` : 'همه زیرتسک‌ها را انجام داده‌ای. عالی بود!'}`
-          : `امروز ${faNumber(todayPlans.length)} برنامه داری؛ برای هر کدام زیرتسک بساز.`)
-        : 'برنامه‌هایت را سبک و روشن بچین؛ بقیه‌اش قدم‌به‌قدم جلو می‌رود.')
-      : 'تاریخ‌ها و مباحث مهم را یک‌جا نگه دار و هیچ موعدی را از دست نده.');
-  const heroActionLabel = alertLevel ? 'رفتن به امتحان‌ها' : (tab === 'week' ? 'برنامه تازه' : 'ثبت امتحان');
+          ? (todayLeft
+            ? t('hero.desc.weekTasksLeft', { count: format.num(todayPlans.length), left: format.num(todayLeft) })
+            : t('hero.desc.weekTasksDone', { count: format.num(todayPlans.length) }))
+          : t('hero.desc.weekNoTasks', { count: format.num(todayPlans.length) }))
+        : t('hero.desc.weekEmpty'))
+      : t('hero.desc.exams'));
+  const heroActionLabel = alertLevel ? t('hero.action.goExams') : (tab === 'week' ? t('hero.action.newPlan') : t('hero.action.newExam'));
   const onHeroAction = alertLevel ? () => switchTab('exams') : openNew;
+
+  const countdown = alertExam ? countdownParts(alertExam, now) : null;
 
   return (
     <div className={`app-shell ${alertLevel ? `exam-alert exam-alert-${alertLevel}` : ''}`} data-alert={alertLevel || ''}>
@@ -1267,25 +1603,25 @@ function App() {
         <div className="header-inner">
           <div className="brand">
             <div className="logo"><CalendarDays size={23} /></div>
-            <div className="brand-copy"><b>تقویم</b><small>برنامه‌ریزی ساده و آرام</small></div>
+            <div className="brand-copy"><b>{t('brand.title')}</b><small>{t('brand.tagline')}</small></div>
           </div>
 
-          <div className="top-nav" role="navigation" aria-label="بخش‌های برنامه">
+          <div className="top-nav" role="navigation" aria-label={t('nav.section')}>
             <button className={tab === 'week' ? 'selected' : ''} aria-current={tab === 'week'} onClick={() => switchTab('week')}>
-              <BookOpenCheck size={18} /> هفته من
+              <BookOpenCheck size={18} /> {t('nav.week')}
             </button>
             <button className={`${tab === 'exams' ? 'selected' : ''} ${alertLevel ? 'has-alert' : ''}`} aria-current={tab === 'exams'} onClick={() => switchTab('exams')}>
-              <ClipboardList size={18} /> امتحان‌ها
-              {(upcoming.length > 0 || alertLevel) && <span className={`nav-count ${alertLevel ? 'alert-pill' : ''}`}>{faNumber(upcoming.length)}</span>}
+              <ClipboardList size={18} /> {t('nav.exams')}
+              {(upcoming.length > 0 || alertLevel) && <span className={`nav-count ${alertLevel ? 'alert-pill' : ''}`}>{format.num(upcoming.length)}</span>}
             </button>
           </div>
 
           <div className="header-actions">
             <div className="date-chip">
-              <span>{faDays[todayIndex]}</span>
-              <b>{jalali(now)}</b>
+              <span>{format.days[todayIndex]?.name}</span>
+              <b>{format.fullDate(now)}</b>
             </div>
-            <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label="تنظیمات"><Settings size={20} /></button>
+            <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label={t('action.settings')}><Settings size={20} /></button>
           </div>
         </div>
       </header>
@@ -1298,14 +1634,17 @@ function App() {
           <div className="banner-copy">
             <b>
               {nextDaysLeft <= 0
-                ? `امروز امتحان ${alertExam.name} داری!`
+                ? t('hero.title.examToday', { name: alertExam.name })
                 : nextDaysLeft === 1
-                  ? `فردا امتحان ${alertExam.name} داری`
-                  : `${faNumber(nextDaysLeft)} روز مانده به ${alertExam.name}`}
+                  ? t('hero.title.examTomorrow', { name: alertExam.name })
+                  : t('hero.title.examDays', { name: alertExam.name, count: format.num(nextDaysLeft) })}
             </b>
-            <span>{longDate(parseLocalDate(alertExam.date))} — {remaining(alertExam, now)}</span>
+            <span>
+              {format.longDate(parseLocalDate(alertExam.date))} — {remainingLabel(alertExam, now, t, format)}
+              {countdown && <i className="live-clock" dir="ltr">{countdownClock(alertExam, now, format)}</i>}
+            </span>
           </div>
-          <button className="banner-action" onClick={() => switchTab('exams')}>مشاهده</button>
+          <button className="banner-action" onClick={() => switchTab('exams')}>{t('action.view')}</button>
         </div>
       )}
 
@@ -1320,37 +1659,38 @@ function App() {
             </button>
           </div>
 
-          <div className="hero-summary" aria-label="خلاصه برنامه">
+          <div className="hero-summary" aria-label={t('summary.label')}>
             {alertLevel && alertExam ? (
               <>
                 <div className="summary-item wide-summary alert-summary">
-                  <span>{nextDaysLeft <= 0 ? 'امتحان امروز' : nextDaysLeft === 1 ? 'امتحان فردا' : 'نزدیک‌ترین امتحان'}</span>
+                  <span>{nextDaysLeft <= 0 ? t('summary.examToday') : nextDaysLeft === 1 ? t('summary.examTomorrow') : t('summary.nextExam')}</span>
                   <b>{alertExam.name}</b>
-                  <small>{longDate(parseLocalDate(alertExam.date))}</small>
+                  <small>{format.longDate(parseLocalDate(alertExam.date))}</small>
                 </div>
                 <div className="summary-divider" />
-                <div className="summary-item">
-                  <span>زمان باقی‌مانده</span>
-                  <b className="countdown-big">{remaining(alertExam, now)}</b>
+                <div className="summary-item countdown-summary">
+                  <span>{t('summary.timeLeft')}</span>
+                  <b className="countdown-big" dir="ltr">{countdown ? countdownClock(alertExam, now, format) : t('exams.today')}</b>
+                  <small>{countdown ? countdownText(alertExam, now, t, format) : format.longDate(parseLocalDate(alertExam.date))}</small>
                 </div>
               </>
             ) : tab === 'week' ? (
               <>
-                <div className="summary-item"><span>برنامه این هفته</span><b>{faNumber(plans.length)}</b></div>
+                <div className="summary-item"><span>{t('summary.weekPlans')}</span><b>{format.num(plans.length)}</b></div>
                 <div className="summary-divider" />
-                <div className="summary-item"><span>روز فعال</span><b>{faNumber(activeDays)} <small>از ۷</small></b></div>
+                <div className="summary-item"><span>{t('summary.activeDays')}</span><b>{format.num(activeDays)} <small>{t('summary.activeDaysUnit')}</small></b></div>
                 <div className="summary-divider" />
-                <div className="summary-item"><span>زیرتسک انجام‌شده</span><b>{faNumber(doneTasks)}</b></div>
+                <div className="summary-item"><span>{t('summary.doneTasks')}</span><b>{format.num(doneTasks)}</b></div>
               </>
             ) : (
               <>
                 <div className="summary-item wide-summary">
-                  <span>نزدیک‌ترین امتحان</span>
-                  <b>{nextExam ? nextExam.name : 'فعلاً خبری نیست'}</b>
-                  <small>{nextExam ? `${remaining(nextExam, now)} · ${longDate(parseLocalDate(nextExam.date))}` : 'زمان خوبی برای مرور درس‌هاست'}</small>
+                  <span>{t('summary.nextExam')}</span>
+                  <b>{nextExam ? nextExam.name : t('summary.noExam')}</b>
+                  <small>{nextExam ? `${remainingLabel(nextExam, now, t, format)} · ${format.longDate(parseLocalDate(nextExam.date))}` : t('summary.noExamHint')}</small>
                 </div>
                 <div className="summary-divider" />
-                <div className="summary-item"><span>کل امتحان‌های پیش رو</span><b>{faNumber(upcoming.length)}</b></div>
+                <div className="summary-item"><span>{t('summary.upcomingCount')}</span><b>{format.num(upcoming.length)}</b></div>
               </>
             )}
           </div>
@@ -1359,8 +1699,8 @@ function App() {
         {tomorrow && !alertLevel && (
           <div className="alert-card">
             <div className="alert-icon"><BellRing size={20} /></div>
-            <div><b>فردا امتحان {tomorrow.name} داری</b><span>یک مرور کوتاه امروز، خیال فردا را راحت می‌کند.</span></div>
-            <button onClick={() => switchTab('exams')}>دیدن جزئیات</button>
+            <div><b>{t('alert.tomorrowExam', { name: tomorrow.name })}</b><span>{t('alert.tomorrowHint')}</span></div>
+            <button onClick={() => switchTab('exams')}>{t('action.details')}</button>
           </div>
         )}
 
@@ -1368,33 +1708,35 @@ function App() {
           <section className="content-section" aria-labelledby="week-title">
             <div className="section-head">
               <div>
-                <span className="eyebrow">نمای هفتگی</span>
-                <h2 id="week-title">برنامه‌های این هفته</h2>
+                <span className="eyebrow">{t('week.eyebrow')}</span>
+                <h2 id="week-title">{t('week.title')}</h2>
               </div>
               <div className="head-tools">
                 {searchBox}
                 <div className="week-progress">
                   <div>
-                    <span>{allTasks.length ? `${faNumber(doneTasks)} از ${faNumber(allTasks.length)} زیرتسک انجام شد` : 'زیرتسکی ثبت نشده'}</span>
-                    <b>{faNumber(donePercent)}٪</b>
+                    <span>{allTasks.length ? t('week.progress', { done: format.num(doneTasks), total: format.num(allTasks.length) }) : t('week.noTasks')}</span>
+                    <b>{format.num(donePercent)}{t('format.percent')}</b>
                   </div>
                   <div className="progress-track"><i style={{ width: `${donePercent}%` }} /></div>
                 </div>
               </div>
             </div>
 
-            <div className="mobile-day-picker" aria-label="انتخاب روز">
+            <div className="mobile-day-picker" aria-label={t('week.dayPicker')}>
               {week.map((day) => {
                 const count = visiblePlans.filter((plan) => Number(plan.day) === day.index).length;
                 return (
                   <button
                     key={day.name}
-                    className={`${selectedDay === day.index ? 'selected' : ''} ${day.today ? 'today' : ''}`}
+                    className={`${selectedDay === day.index ? 'selected' : ''} ${day.today ? 'today' : ''} ${drag && drag.day === day.index ? 'drop-target' : ''}`}
                     aria-pressed={selectedDay === day.index}
+                    data-drop-day={day.index}
+                    data-drop-append="true"
                     onClick={() => setSelectedDay(day.index)}
                   >
-                    <span>{day.name.slice(0, 1)}</span>
-                    <b>{faFormat(day.date, { day: 'numeric' })}</b>
+                    <span>{day.chip}</span>
+                    <b>{format.dayNumber(day.date)}</b>
                     {count > 0 && <i className="day-dot" aria-hidden="true" />}
                   </button>
                 );
@@ -1406,15 +1748,24 @@ function App() {
                 const dayPlans = visiblePlans
                   .filter((plan) => Number(plan.day) === day.index)
                   .sort((a, b) => compareDisplayOrder(a, b, thisWeek));
+                /* Where the dragged card would land: `index` counts the *other* cards. */
+                const draggedPosition = drag ? dayPlans.findIndex((plan) => plan.id === drag.id) : -1;
+                const showDrop = Boolean(drag) && drag.day === day.index && !(draggedPosition >= 0 && drag.index === draggedPosition);
+                const ordinal = (position) => (draggedPosition >= 0 && position > draggedPosition ? position - 1 : position);
+                const remainingCount = dayPlans.length - (draggedPosition >= 0 ? 1 : 0);
                 return (
-                  <article className={`day-column ${day.today ? 'today' : ''} ${selectedDay === day.index ? 'mobile-selected' : ''}`} key={day.name}>
+                  <article
+                    className={`day-column ${day.today ? 'today' : ''} ${selectedDay === day.index ? 'mobile-selected' : ''} ${drag && drag.day === day.index ? 'drop-target' : ''}`}
+                    key={day.name}
+                    data-drop-day={day.index}
+                  >
                     <div className="day-head">
                       <div className="day-title">
                         <span>{day.name}</span>
-                        <b>{shortDate(day.date)}</b>
+                        <b>{format.shortDate(day.date)}</b>
                       </div>
-                      {day.today && <em>امروز</em>}
-                      <button className="mini-add" onClick={() => setModal({ type: 'plan', day: day.index })} aria-label={`افزودن برنامه به ${day.name}`}><Plus size={17} /></button>
+                      {day.today && <em>{t('week.today')}</em>}
+                      <button className="mini-add" onClick={() => setModal({ type: 'plan', day: day.index })} aria-label={t('week.addToDay', { day: day.name })}><Plus size={17} /></button>
                     </div>
 
                     <div className="plan-list">
@@ -1427,67 +1778,84 @@ function App() {
                         const neighbourBelow = dayPlans[position + 1];
                         const canMoveUp = !needle && Boolean(neighbourAbove) && isPlanComplete(neighbourAbove, thisWeek) === isDone;
                         const canMoveDown = !needle && Boolean(neighbourBelow) && isPlanComplete(neighbourBelow, thisWeek) === isDone;
+                        const isDragging = drag?.id === plan.id;
                         return (
-                          <article
-                            className={`plan-card ${isOpen ? 'expanded' : ''} ${isDone ? 'done' : ''}`}
-                            key={plan.id}
-                            style={{ '--plan-color': plan.color || planColors[0] }}
-                          >
-                            <div className="plan-accent" />
-                            <div className="plan-card-head">
-                              <button
-                                className="plan-main"
-                                type="button"
-                                aria-expanded={isOpen}
-                                onClick={() => setExpandedPlan(isOpen ? null : plan.id)}
-                              >
-                                {plan.sticker && <span className="plan-sticker" aria-hidden="true">{plan.sticker}</span>}
-                                <b>{plan.title}</b>
-                              </button>
-                              <button
-                                className="more-button"
-                                type="button"
-                                aria-label={`گزینه‌های ${plan.title}`}
-                                aria-haspopup="menu"
-                                aria-expanded={menu === plan.id}
-                                onClick={(event) => { event.stopPropagation(); setMenu(menu === plan.id ? null : plan.id); }}
-                              ><MoreHorizontal size={19} /></button>
-                            </div>
-                            {plan.description && <p className="plan-description">{plan.description}</p>}
-                            {(plan.time || plan.tasks.length > 0) && (
-                              <div className="plan-meta">
-                                {plan.time && <span className="plan-time"><Clock3 size={13} /> ساعت {faDigits(plan.time)}</span>}
-                                {plan.tasks.length > 0 && (
-                                  <span className="task-count">{faNumber(doneCount)} از {faNumber(plan.tasks.length)}</span>
-                                )}
+                          <Fragment key={plan.id}>
+                            {showDrop && drag.index === ordinal(position) && position !== draggedPosition && (
+                              <div className="drop-line" aria-hidden="true" />
+                            )}
+                            <article
+                              className={`plan-card ${isOpen ? 'expanded' : ''} ${isDone ? 'done' : ''} ${isDragging ? 'dragging' : ''}`}
+                              data-plan-id={plan.id}
+                              style={{ '--plan-color': plan.color || planColors[0] }}
+                            >
+                              <div className="plan-accent" />
+                              <div className="plan-card-head">
+                                <button
+                                  className="plan-main"
+                                  type="button"
+                                  aria-expanded={isOpen}
+                                  onClick={() => setExpandedPlan(isOpen ? null : plan.id)}
+                                >
+                                  {plan.sticker && <span className="plan-sticker" aria-hidden="true">{plan.sticker}</span>}
+                                  <b>{plan.title}</b>
+                                </button>
+                                <button
+                                  className="drag-handle"
+                                  type="button"
+                                  tabIndex={-1}
+                                  aria-label={t('plan.drag', { name: plan.title })}
+                                  title={needle ? t('plan.dragDisabled') : t('plan.dragHint')}
+                                  disabled={Boolean(needle)}
+                                  onPointerDown={(event) => beginDrag(event, plan)}
+                                ><GripVertical size={15} /></button>
+                                <button
+                                  className="more-button"
+                                  type="button"
+                                  aria-label={t('plan.options', { name: plan.title })}
+                                  aria-haspopup="menu"
+                                  aria-expanded={menu === plan.id}
+                                  onClick={(event) => { event.stopPropagation(); setMenu(menu === plan.id ? null : plan.id); }}
+                                ><MoreHorizontal size={19} /></button>
                               </div>
-                            )}
-                            {isOpen && (
-                              <PlanTasks
-                                plan={plan}
-                                thisWeek={thisWeek}
-                                onToggle={toggleTask}
-                                onAdd={addTask}
-                                onRemove={removeTask}
-                                onStickerChange={updateTaskSticker}
-                              />
-                            )}
-                            {menu === plan.id && (
-                              <div className="menu" role="menu" onClick={(event) => event.stopPropagation()}>
-                                <button role="menuitem" onClick={() => { setModal({ ...plan, type: 'plan' }); setMenu(null); }}><Edit3 size={15} />ویرایش</button>
-                                <button role="menuitem" onClick={() => movePlan(plan.id, -1)} disabled={!canMoveUp} title={needle ? 'برای جابه‌جایی، جست‌وجو را پاک کن' : undefined}><ArrowUp size={15} />بالا بردن</button>
-                                <button role="menuitem" onClick={() => movePlan(plan.id, 1)} disabled={!canMoveDown} title={needle ? 'برای جابه‌جایی، جست‌وجو را پاک کن' : undefined}><ArrowDown size={15} />پایین بردن</button>
-                                <button role="menuitem" onClick={() => duplicatePlan(plan.id)}><Copy size={15} />کپی</button>
-                                <button role="menuitem" className="danger" onClick={() => removePlan(plan.id)}><Trash2 size={15} />حذف</button>
-                              </div>
-                            )}
-                          </article>
+                              {plan.description && <p className="plan-description">{plan.description}</p>}
+                              {(plan.time || plan.tasks.length > 0) && (
+                                <div className="plan-meta">
+                                  {plan.time && <span className="plan-time"><Clock3 size={13} /> {t('plan.time')} {format.digits(plan.time)}</span>}
+                                  {plan.tasks.length > 0 && (
+                                    <span className="task-count">{t('plan.taskCount', { done: format.num(doneCount), total: format.num(plan.tasks.length) })}</span>
+                                  )}
+                                </div>
+                              )}
+                              {isOpen && (
+                                <PlanTasks
+                                  t={t}
+                                  plan={plan}
+                                  thisWeek={thisWeek}
+                                  onToggle={toggleTask}
+                                  onAdd={addTask}
+                                  onRemove={removeTask}
+                                  onStickerChange={updateTaskSticker}
+                                />
+                              )}
+                              {menu === plan.id && (
+                                <div className="menu" role="menu" onClick={(event) => event.stopPropagation()}>
+                                  <button role="menuitem" onClick={() => { setModal({ ...plan, type: 'plan' }); setMenu(null); }}><Edit3 size={15} />{t('action.edit')}</button>
+                                  <button role="menuitem" onClick={() => movePlan(plan.id, -1)} disabled={!canMoveUp} title={needle ? t('plan.dragDisabled') : undefined}><ArrowUp size={15} />{t('action.moveUp')}</button>
+                                  <button role="menuitem" onClick={() => movePlan(plan.id, 1)} disabled={!canMoveDown} title={needle ? t('plan.dragDisabled') : undefined}><ArrowDown size={15} />{t('action.moveDown')}</button>
+                                  <button role="menuitem" onClick={() => duplicatePlan(plan.id)}><Copy size={15} />{t('action.duplicate')}</button>
+                                  <button role="menuitem" className="danger" onClick={() => removePlan(plan.id)}><Trash2 size={15} />{t('action.delete')}</button>
+                                </div>
+                              )}
+                            </article>
+                          </Fragment>
                         );
                       })}
-                      {!dayPlans.length && (
+                      {showDrop && drag.index >= remainingCount && <div className="drop-line" aria-hidden="true" />}
+                      {!dayPlans.length && !showDrop && (
                         <div className="day-empty">
-                          <span>{needle ? 'نتیجه‌ای نبود' : 'روز خلوتی است'}</span>
-                          <button onClick={() => setModal({ type: 'plan', day: day.index })}>+ افزودن برنامه</button>
+                          <span>{needle ? t('search.noResult') : t('week.dayEmpty')}</span>
+                          <button onClick={() => setModal({ type: 'plan', day: day.index })}>{t('week.addPlan')}</button>
                         </div>
                       )}
                     </div>
@@ -1500,66 +1868,109 @@ function App() {
           <section className="content-section exams-section" aria-labelledby="exam-title">
             <div className="section-head exam-section-head">
               <div>
-                <span className="eyebrow">زمان‌بندی آزمون‌ها</span>
-                <h2 id="exam-title">امتحان‌های پیش رو</h2>
+                <span className="eyebrow">{t('exams.eyebrow')}</span>
+                <h2 id="exam-title">{t('exams.title')}</h2>
               </div>
               <div className="head-tools">
                 {searchBox}
-                <button className="button secondary desktop-add" onClick={() => setModal({ type: 'exam' })}><Plus size={18} /> امتحان جدید</button>
+                <button className="button secondary desktop-add" onClick={() => setModal({ type: 'exam' })}><Plus size={18} /> {t('exams.new')}</button>
               </div>
             </div>
 
             <div className="exam-list">
               {visibleUpcoming.map((exam) => {
                 const distance = daysUntil(exam.date, now);
+                const clock = distance >= 0 && distance <= 2 ? countdownClock(exam, now, format) : '';
+                const doneTopics = exam.topics.filter((topic) => topic.done).length;
+                const topicPercent = exam.topics.length ? Math.round((doneTopics / exam.topics.length) * 100) : 0;
+                const topicsOpen = expandedExam === exam.id;
                 return (
                   <article className={`exam-card ${distance <= 1 ? 'urgent' : ''}`} key={exam.id}>
                     <div className="exam-date">
-                      <span>{faFormat(parseLocalDate(exam.date), { month: 'short' })}</span>
-                      <b>{faFormat(parseLocalDate(exam.date), { day: 'numeric' })}</b>
+                      <span>{format.monthName(parseLocalDate(exam.date))}</span>
+                      <b>{format.dayNumber(parseLocalDate(exam.date))}</b>
                     </div>
                     <div className="exam-info">
                       <div className="exam-title-row">
                         <h3>{exam.name}</h3>
-                        <span className="remaining"><Clock3 size={14} />{remaining(exam, now)}</span>
+                        <span className="remaining">
+                          <Clock3 size={14} />{remainingLabel(exam, now, t, format)}
+                          {clock && <i className="live-clock" dir="ltr">{clock}</i>}
+                        </span>
                       </div>
-                      <small>{longDate(parseLocalDate(exam.date))}</small>
+                      <small>{format.longDate(parseLocalDate(exam.date))}</small>
                       {exam.description && <p className="exam-description">{exam.description}</p>}
+
+                      <div className="exam-topics-block">
+                        <button
+                          type="button"
+                          className="topics-toggle"
+                          aria-expanded={topicsOpen}
+                          onClick={() => setExpandedExam(topicsOpen ? null : exam.id)}
+                        >
+                          <ListChecks size={15} />
+                          <span>{t('topics.toggle')}</span>
+                          {exam.topics.length > 0 && (
+                            <b className="topics-count">{t('topics.progress', { done: format.num(doneTopics), total: format.num(exam.topics.length) })}</b>
+                          )}
+                          <ChevronDown size={14} className={topicsOpen ? 'rotated' : ''} />
+                        </button>
+                        {exam.topics.length > 0 && (
+                          <div className="topics-track"><i style={{ width: `${topicPercent}%` }} /></div>
+                        )}
+                        {topicsOpen && (
+                          <ExamTopics
+                            t={t}
+                            exam={exam}
+                            onToggle={toggleTopic}
+                            onAdd={addTopic}
+                            onRemove={removeTopic}
+                          />
+                        )}
+                      </div>
                     </div>
                     <button
                       className="more-button exam-more"
-                      aria-label={`گزینه‌های ${exam.name}`}
+                      aria-label={t('exam.options', { name: exam.name })}
                       aria-haspopup="menu"
                       aria-expanded={menu === exam.id}
                       onClick={(event) => { event.stopPropagation(); setMenu(menu === exam.id ? null : exam.id); }}
                     ><MoreHorizontal size={21} /></button>
                     {menu === exam.id && (
                       <div className="menu exam-menu" role="menu" onClick={(event) => event.stopPropagation()}>
-                        <button role="menuitem" onClick={() => { setModal({ ...exam, type: 'exam' }); setMenu(null); }}><Edit3 size={15} />ویرایش</button>
-                        <button role="menuitem" className="danger" onClick={() => removeExam(exam.id)}><Trash2 size={15} />حذف</button>
+                        <button role="menuitem" onClick={() => { setModal({ ...exam, type: 'exam' }); setMenu(null); }}><Edit3 size={15} />{t('action.edit')}</button>
+                        <button role="menuitem" className="danger" onClick={() => removeExam(exam.id)}><Trash2 size={15} />{t('action.delete')}</button>
                       </div>
                     )}
                   </article>
                 );
               })}
               {!visibleUpcoming.length && (
-                <EmptyState type="exam" searching={Boolean(needle)} onAdd={() => setModal({ type: 'exam' })} />
+                <EmptyState t={t} type="exam" searching={Boolean(needle)} onAdd={() => setModal({ type: 'exam' })} />
               )}
             </div>
 
             {visiblePast.length > 0 && (
               <details className="past-exams">
-                <summary>امتحان‌های برگزارشده <span>{faNumber(visiblePast.length)}</span></summary>
+                <summary>{t('exams.past')} <span>{format.num(visiblePast.length)}</span></summary>
                 <div className="past-list">
                   {visiblePast.map((exam) => (
                     <div className="past-row" key={exam.id}>
                       <CheckCircle2 size={19} />
                       <div>
                         <b>{exam.name}</b>
-                        <span>{longDate(parseLocalDate(exam.date))}</span>
+                        <span>{format.longDate(parseLocalDate(exam.date))}</span>
                         {exam.description && <small className="past-description">{exam.description}</small>}
+                        {exam.topics.length > 0 && (
+                          <small className="past-topics">
+                            <ListChecks size={12} /> {t('topics.progress', {
+                              done: format.num(exam.topics.filter((topic) => topic.done).length),
+                              total: format.num(exam.topics.length),
+                            })}
+                          </small>
+                        )}
                       </div>
-                      <button onClick={() => removeExam(exam.id)} aria-label={`حذف ${exam.name}`}><Trash2 size={17} /></button>
+                      <button onClick={() => removeExam(exam.id)} aria-label={t('exam.remove', { name: exam.name })}><Trash2 size={17} /></button>
                     </div>
                   ))}
                 </div>
@@ -1569,25 +1980,29 @@ function App() {
         )}
       </main>
 
-      <nav className={`bottom-nav ${alertLevel ? 'nav-alert' : ''}`} aria-label="بخش‌های برنامه">
+      <nav className={`bottom-nav ${alertLevel ? 'nav-alert' : ''}`} aria-label={t('nav.section')}>
         <button className={tab === 'week' ? 'selected' : ''} onClick={() => switchTab('week')}>
-          <BookOpenCheck /><span>هفته من</span>
+          <BookOpenCheck /><span>{t('nav.week')}</span>
         </button>
-        <button className={`nav-add ${alertLevel ? 'nav-add-alert' : ''}`} onClick={openNew} aria-label={tab === 'week' ? 'برنامه تازه' : 'ثبت امتحان'}><Plus /></button>
+        <button className={`nav-add ${alertLevel ? 'nav-add-alert' : ''}`} onClick={openNew} aria-label={tab === 'week' ? t('nav.addPlan') : t('nav.addExam')}><Plus /></button>
         <button className={`${tab === 'exams' ? 'selected' : ''} ${alertLevel ? 'nav-exam-alert' : ''}`} onClick={() => switchTab('exams')}>
           {alertLevel === 'critical' ? <AlertTriangle /> : alertLevel ? <Flame /> : <ClipboardList />}
-          <span>امتحان‌ها</span>
-          {(upcoming.length > 0 || alertLevel) && <i className={alertLevel ? 'alert-badge' : ''}>{faNumber(upcoming.length)}</i>}
+          <span>{t('nav.exams')}</span>
+          {(upcoming.length > 0 || alertLevel) && <i className={alertLevel ? 'alert-badge' : ''}>{format.num(upcoming.length)}</i>}
         </button>
       </nav>
 
-      {modal && <Modal data={modal} onClose={() => setModal(null)} onPlan={savePlan} onExam={saveExam} />}
+      {modal && <Modal t={t} format={format} data={modal} onClose={() => setModal(null)} onPlan={savePlan} onExam={saveExam} />}
       {settingsOpen && (
         <SettingsPanel
+          t={t}
+          format={format}
           theme={theme}
           setTheme={setTheme}
           fontScale={fontScale}
           setFontScale={setFontScale}
+          lang={lang}
+          setLang={setLang}
           plansCount={plans.length}
           examsCount={exams.length}
           examTotal={exams.length}
@@ -1602,8 +2017,8 @@ function App() {
         <div className="toast" role="status" aria-live="polite">
           <CheckCircle2 size={19} />
           <span>{toast.message}</span>
-          {toast.undo && <button onClick={() => { toast.undo(); setToast(null); }}>برگردان</button>}
-          <button className="toast-close" onClick={() => setToast(null)} aria-label="بستن"><X size={16} /></button>
+          {toast.undo && <button onClick={() => { toast.undo(); setToast(null); }}>{t('action.undo')}</button>}
+          <button className="toast-close" onClick={() => setToast(null)} aria-label={t('action.close')}><X size={16} /></button>
         </div>
       )}
     </div>
@@ -1620,5 +2035,5 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 createRoot(document.getElementById('root')).render(
   <ErrorBoundary>
     <App />
-  </ErrorBoundary>
+  </ErrorBoundary>,
 );

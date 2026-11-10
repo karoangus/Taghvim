@@ -1,0 +1,178 @@
+/* Offline/install affordances shared by the app shell and its fallback page. */
+.offline-banner {
+  width: min(100% - 28px, 1240px);
+  min-height: 42px;
+  margin: 10px auto 0;
+  padding: 9px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #70451a;
+  background: #fff3d9;
+  border: 1px solid #efd49d;
+  border-radius: 12px;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.offline-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  color: #70451a;
+  background: #fff3d9;
+  border: 1px solid #efd49d;
+  border-radius: 10px;
+  font-size: 0.5625rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.offline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.offline-actions .button {
+  min-height: 40px;
+  flex: 1 1 145px;
+  justify-content: center;
+  font-size: 0.625rem;
+}
+
+.offline-actions .button:disabled {
+  opacity: 0.58;
+  cursor: default;
+}
+
+.offline-help-card {
+  display: grid;
+  gap: 5px;
+  margin-top: 11px;
+  padding: 11px 12px;
+  color: var(--text-soft, #514e68);
+  background: var(--surface, #fff);
+  border: 1px dashed var(--line-strong, #d7d5e4);
+  border-radius: 11px;
+  font-size: 0.5625rem;
+  line-height: 1.8;
+}
+
+.offline-help-card b {
+  color: var(--text, #282549);
+  font-size: 0.625rem;
+}
+
+.offline-storage-status,
+.settings-version {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted, #77758d);
+  font-size: 0.5rem;
+  line-height: 1.8;
+}
+
+.settings-version {
+  direction: ltr;
+  text-align: start;
+}
+
+.lp-offline-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #282549;
+  background: #f5f6fa;
+  font-family: Tahoma, Arial, sans-serif;
+  direction: rtl;
+}
+
+.lp-offline-card {
+  width: min(100%, 480px);
+  padding: clamp(24px, 7vw, 44px);
+  background: #fff;
+  border: 1px solid #e4e3ed;
+  border-radius: 24px;
+  box-shadow: 0 18px 50px rgba(40, 37, 73, 0.1);
+  text-align: center;
+}
+
+.lp-offline-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 18px;
+  display: grid;
+  place-items: center;
+  background: #fff3d9;
+  border-radius: 20px;
+  font-size: 30px;
+}
+
+.lp-offline-card h1 {
+  margin: 0;
+  font-size: clamp(1.25rem, 5vw, 1.75rem);
+}
+
+.lp-offline-card p {
+  margin: 13px 0 22px;
+  color: #68667b;
+  font-size: 0.9rem;
+  line-height: 2;
+}
+
+.lp-offline-link {
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  color: #fff;
+  background: #282549;
+  border-radius: 12px;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.lp-offline-version {
+  display: block;
+  margin-top: 18px;
+  color: #77758d;
+  direction: ltr;
+  font-size: 0.6875rem;
+}
+
+/* Low-performance mode avoids costly glass/blur effects across the app. */
+html.lp-perf *,
+html.lp-perf *::before,
+html.lp-perf *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@media (max-width: 520px) {
+  .offline-banner {
+    width: calc(100% - 20px);
+    min-height: 38px;
+    margin-top: 7px;
+    padding: 7px 10px;
+    font-size: 0.625rem;
+  }
+
+  .offline-badge {
+    min-height: 25px;
+    padding: 3px 6px;
+    font-size: 0.5rem;
+  }
+
+  .offline-actions .button {
+    flex-basis: 100%;
+  }
+}

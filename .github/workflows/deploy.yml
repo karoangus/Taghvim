@@ -39,7 +39,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html assets sw.js manifest.webmanifest icon.svg
+          git add index.html assets sw.js manifest.webmanifest icon.svg offline.html app-version.json css js
           if git diff --staged --quiet; then
             echo "Build output unchanged — nothing to publish."
           else

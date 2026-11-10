@@ -52,6 +52,9 @@ import {
 } from './i18n.js';
 import { DateField } from './date-picker.jsx';
 
+const LP_APP_VERSION = __LP_APP_VERSION__;
+const STORAGE_PERSISTENCE_KEY = 'taghvim-storage-persisted';
+const SETTINGS_VERSION_KEY = 'taghvim-settingsVersion';
 const planColors = ['#6558e8', '#ee7b53', '#16a37d', '#d95782', '#d89a25', '#3186d5'];
 const PLANS_KEY = 'taghvim-plans';
 const EXAMS_KEY = 'taghvim-exams';
@@ -232,6 +235,72 @@ function saveList(key, value) {
   } catch {
     return false; /* private mode / quota — keep working in memory */
   }
+}
+
+function saveStoragePersistenceStatus(status) {
+  try { localStorage.setItem(STORAGE_PERSISTENCE_KEY, status); } catch { /* private mode */ }
+  return status;
+}
+
+async function readStoragePersistenceStatus() {
+  if (!navigator.storage?.persisted) return saveStoragePersistenceStatus('unsupported');
+  try {
+    const persisted = await navigator.storage.persisted();
+    return saveStoragePersistenceStatus(persisted ? 'granted' : 'not-granted');
+  } catch {
+    return saveStoragePersistenceStatus('unsupported');
+  }
+}
+
+async function requestStoragePersistence() {
+  const storage = navigator.storage;
+  if (!storage?.persist || !storage?.persisted) return saveStoragePersistenceStatus('unsupported');
+  try {
+    if (!await storage.persisted()) await storage.persist();
+    return saveStoragePersistenceStatus(await storage.persisted() ? 'granted' : 'not-granted');
+  } catch {
+    return saveStoragePersistenceStatus('not-granted');
+  }
+}
+
+function sendOfflineWorkerMessage(type, timeoutMs = 10000) {
+  if (!('serviceWorker' in navigator) || !window.MessageChannel) {
+    return Promise.resolve({ ok: false, reason: 'unsupported', missing: [] });
+  }
+
+  return new Promise((resolve) => {
+    let finished = false;
+    let channel;
+    const finish = (result) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      channel?.port1?.close?.();
+      channel?.port2?.close?.();
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish({ ok: false, reason: 'timeout', missing: [] }), timeoutMs);
+
+    navigator.serviceWorker.ready.then((registration) => {
+      if (finished) return;
+      const worker = registration.active || navigator.serviceWorker.controller;
+      if (!worker) {
+        finish({ ok: false, reason: 'not-active', missing: [] });
+        return;
+      }
+      channel = new MessageChannel();
+      channel.port1.onmessage = (event) => finish(event.data || { ok: false, reason: 'empty-response', missing: [] });
+      worker.postMessage({ type, version: LP_APP_VERSION }, [channel.port2]);
+    }).catch(() => finish({ ok: false, reason: 'unavailable', missing: [] }));
+  });
+}
+
+function lpEnsureOfflineReady() {
+  return sendOfflineWorkerMessage('LP_ENSURE_OFFLINE_READY');
+}
+
+function lpCheckOfflineReady() {
+  return sendOfflineWorkerMessage('LP_CHECK_OFFLINE_READY');
 }
 
 function loadTheme() {
@@ -666,6 +735,8 @@ function SettingsPanel({
   theme, setTheme, fontScale, setFontScale, lang, setLang,
   reduceMotion, setReduceMotion,
   plansCount, examsCount, examTotal,
+  storagePersistence, isStandalone, installPromptAvailable, offlineBusy,
+  onEnsureOffline, onTestOffline, onInstall,
   onExport, onExportIcs, onImport, onClearAll, onClose,
   t, format,
 }) {
@@ -771,6 +842,31 @@ function SettingsPanel({
           >
             {reduceMotion ? t('settings.motionOn') : t('settings.motionOff')}
           </button>
+        </div>
+
+        <div className="setting-block offline-setting">
+          <div className="setting-copy">
+            <b>{t('settings.offline')}</b>
+            <span>{t('settings.offlineHint')}</span>
+            <span className="offline-storage-status">{t(`offline.storage.${storagePersistence}`)}</span>
+            <small id="settingsVersion" className="settings-version">{t('offline.version', { version: LP_APP_VERSION })}</small>
+            {installPromptAvailable && <span>{t('offline.installAvailable')}</span>}
+          </div>
+          <div className="offline-actions">
+            <button className="button secondary" type="button" disabled={offlineBusy} onClick={onEnsureOffline}>
+              {t('offline.saveButton')}
+            </button>
+            <button className="button secondary" type="button" disabled={offlineBusy} onClick={onTestOffline}>
+              {t('offline.testButton')}
+            </button>
+            <button className="button secondary" type="button" disabled={isStandalone || offlineBusy} onClick={onInstall}>
+              {isStandalone ? t('offline.installedButton') : t('offline.installButton')}
+            </button>
+          </div>
+          <div className="offline-help-card">
+            <b>{t('offline.installHelpTitle')}</b>
+            <span>{t('offline.installHelp')}</span>
+          </div>
         </div>
 
         <div className="setting-block data-setting">
@@ -1026,6 +1122,17 @@ function App() {
   const [lang, setLang] = useState(loadLanguage);
   const [toast, setToast] = useState(null);
   const [queryText, setQueryText] = useState('');
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine !== false);
+  const [isStandalone, setIsStandalone] = useState(() => Boolean(
+    window.LPOffline?.isStandalone?.()
+      || window.matchMedia?.('(display-mode: standalone)').matches
+      || navigator.standalone === true,
+  ));
+  const [installPromptAvailable, setInstallPromptAvailable] = useState(() => Boolean(window.LPOffline?.hasInstallPrompt));
+  const [storagePersistence, setStoragePersistence] = useState(() => {
+    try { return localStorage.getItem(STORAGE_PERSISTENCE_KEY) || 'checking'; } catch { return 'unsupported'; }
+  });
+  const [offlineBusy, setOfflineBusy] = useState(false);
   const searchRef = useRef(null);
 
   const t = useMemo(() => translator(lang), [lang]);
@@ -1034,6 +1141,40 @@ function App() {
   // Braces matter: saveList returns a boolean and React would treat it as a cleanup function.
   useEffect(() => { saveList(PLANS_KEY, plans); }, [plans]);
   useEffect(() => { saveList(EXAMS_KEY, exams); }, [exams]);
+
+  useEffect(() => {
+    try { localStorage.setItem(SETTINGS_VERSION_KEY, LP_APP_VERSION); } catch { /* private mode */ }
+    readStoragePersistenceStatus().then(setStoragePersistence);
+  }, []);
+
+  useEffect(() => {
+    const updateNetworkState = () => setIsOnline(navigator.onLine !== false);
+    const updateInstallState = () => {
+      setInstallPromptAvailable(Boolean(window.LPOffline?.hasInstallPrompt));
+      setIsStandalone(Boolean(
+        window.LPOffline?.isStandalone?.()
+          || window.matchMedia?.('(display-mode: standalone)').matches
+          || navigator.standalone === true,
+      ));
+    };
+    const displayMode = window.matchMedia?.('(display-mode: standalone)');
+    window.addEventListener('online', updateNetworkState);
+    window.addEventListener('offline', updateNetworkState);
+    window.addEventListener('lp:install-prompt', updateInstallState);
+    window.addEventListener('lp:install-state', updateInstallState);
+    window.addEventListener('lp:app-installed', updateInstallState);
+    displayMode?.addEventListener?.('change', updateInstallState);
+    updateNetworkState();
+    updateInstallState();
+    return () => {
+      window.removeEventListener('online', updateNetworkState);
+      window.removeEventListener('offline', updateNetworkState);
+      window.removeEventListener('lp:install-prompt', updateInstallState);
+      window.removeEventListener('lp:install-state', updateInstallState);
+      window.removeEventListener('lp:app-installed', updateInstallState);
+      displayMode?.removeEventListener?.('change', updateInstallState);
+    };
+  }, []);
 
   /* Keep the clock (and every countdown) fresh without a heavy timer. */
   useEffect(() => {
@@ -1192,6 +1333,7 @@ function App() {
   /* Expose reduced-motion preference to CSS so every animated piece can opt out. */
   useEffect(() => {
     document.documentElement.dataset.reduceMotion = String(reduceMotion);
+    document.documentElement.classList.toggle('lp-perf', reduceMotion);
     try { localStorage.setItem(MOTION_KEY, String(reduceMotion)); } catch { /* ignore */ }
   }, [reduceMotion]);
 
@@ -1204,6 +1346,54 @@ function App() {
   const todayLeft = todayTasks.filter((task) => task.done !== thisWeek).length;
 
   const notify = useCallback((message, undo) => setToast({ id: uid(), message, undo }), []);
+
+  const ensureOffline = useCallback(async () => {
+    setOfflineBusy(true);
+    try {
+      setStoragePersistence(await requestStoragePersistence());
+      const result = await lpEnsureOfflineReady();
+      if (result.ok) notify(t('offline.saved'));
+      else if (result.missing?.length) notify(t('offline.saveFailed', { count: format.num(result.missing.length) }));
+      else notify(t('offline.saveUnavailable'));
+    } catch {
+      notify(t('offline.saveUnavailable'));
+    } finally {
+      setOfflineBusy(false);
+    }
+  }, [format, notify, t]);
+
+  const testOffline = useCallback(async () => {
+    setOfflineBusy(true);
+    try {
+      const result = await lpCheckOfflineReady();
+      if (!result.ok && result.missing?.length) {
+        notify(t('offline.testMissing', { count: format.num(result.missing.length) }));
+      } else if (!result.ok) {
+        notify(t('offline.testFailed'));
+      } else {
+        notify(isOnline ? t('offline.testReady') : t('offline.testPassed'));
+      }
+    } catch {
+      notify(t('offline.testFailed'));
+    } finally {
+      setOfflineBusy(false);
+    }
+  }, [format, isOnline, notify, t]);
+
+  const installApp = useCallback(async () => {
+    if (isStandalone) {
+      notify(t('offline.alreadyInstalled'));
+      return;
+    }
+    if (!window.LPOffline?.hasInstallPrompt) {
+      notify(t('offline.installInstructions'));
+      return;
+    }
+    const result = await window.LPOffline.promptInstall();
+    if (result?.outcome === 'accepted') notify(t('offline.installAccepted'));
+    else if (result?.outcome === 'dismissed') notify(t('offline.installDismissed'));
+    else notify(t('offline.installInstructions'));
+  }, [isStandalone, notify, t]);
 
   const openNew = useCallback(
     () => setModal(tab === 'week' ? { type: 'plan', day: selectedDay } : { type: 'exam' }),
@@ -1657,10 +1847,17 @@ function App() {
               <span>{format.days[todayIndex]?.name}</span>
               <b>{format.fullDate(now)}</b>
             </div>
+            {!isOnline && <span className="offline-badge" role="status">{t('offline.badge')}</span>}
             <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label={t('action.settings')}><Settings size={20} /></button>
           </div>
         </div>
       </header>
+
+      {!isOnline && (
+        <div className="offline-banner" role="status" aria-live="polite">
+          {t('offline.banner')}
+        </div>
+      )}
 
       {alertLevel && alertExam && (
         <div className={`exam-alert-banner level-${alertLevel}`} role="alert">
@@ -2044,6 +2241,13 @@ function App() {
           plansCount={plans.length}
           examsCount={exams.length}
           examTotal={exams.length}
+          storagePersistence={storagePersistence}
+          isStandalone={isStandalone}
+          installPromptAvailable={installPromptAvailable}
+          offlineBusy={offlineBusy}
+          onEnsureOffline={ensureOffline}
+          onTestOffline={testOffline}
+          onInstall={installApp}
           onExport={exportData}
           onExportIcs={exportIcs}
           onImport={importData}
@@ -2063,11 +2267,16 @@ function App() {
   );
 }
 
-/* Production-only offline support. */
+/* Production-only offline support. Register from the app's base path so the
+   same build works on GitHub Pages sub-paths and on a custom domain. */
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register(new URL('sw.js', window.location.href).pathname).catch(() => {});
-  });
+  const appBase = new URL(import.meta.env.BASE_URL, document.baseURI);
+  const appScope = appBase.pathname.endsWith('/') ? appBase.pathname : `${appBase.pathname}/`;
+  const serviceWorkerUrl = new URL('sw.js', appBase);
+  navigator.serviceWorker.register(serviceWorkerUrl.href, {
+    scope: appScope,
+    updateViaCache: 'none',
+  }).catch(() => {});
 }
 
 createRoot(document.getElementById('root')).render(

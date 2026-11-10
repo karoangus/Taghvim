@@ -1,14 +1,17 @@
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 const appDir = dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(resolve(appDir, '../package.json'), 'utf8'));
 
 export default defineConfig({
   // Relative base so the build works on ANY host/path:
   // GitHub Pages sub-path (karoangus.github.io/Taghvim/), previews, custom domains.
   base: './',
+  define: { __LP_APP_VERSION__: JSON.stringify(packageJson.version) },
   plugins: [react()],
   build: {
     // GitHub Pages publishes the ROOT of the main branch, so the production

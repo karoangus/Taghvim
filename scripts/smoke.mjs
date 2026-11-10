@@ -156,6 +156,15 @@ w = await boot({ 'taghvim-plans': planSeed() });
 click(w, w.document.querySelector('.icon-button[aria-label="تنظیمات"]'));
 await tick();
 ok(text(w).includes('تنظیمات تقویم'), 'settings panel opens');
+ok(text(w).includes('آفلاین و اینترنت ملی'), 'settings honestly explain the domain and offline limitation');
+ok(!!w.document.querySelector('#settingsVersion')?.textContent.includes('1.1.0'), 'the settings panel shows the app version');
+ok(!!findButton(w, 'ذخیره آفلاین', '.settings-modal button'), 'the user can repair/cache the offline shell');
+ok(!!findButton(w, 'تست آفلاین', '.settings-modal button'), 'the user can verify offline cache completeness');
+ok(!!findButton(w, 'نصب روی گوشی', '.settings-modal button'), 'the PWA install action is available');
+await tick(40);
+ok(['granted', 'not-granted', 'unsupported'].includes(w.localStorage.getItem('taghvim-storage-persisted')),
+  'persistent-storage support/status is saved in localStorage');
+ok(w.localStorage.getItem('taghvim-settingsVersion') === '1.1.0', 'settings version is stored locally');
 ok(query(w, '.theme-options button').length === 3, 'automatic, light, and dark themes are available');
 click(w, findButton(w, 'تیره', '.theme-options button'));
 await tick();
@@ -179,6 +188,15 @@ click(w, findButton(w, 'پاک کردن همه داده‌ها', '.settings-moda
 await tick();
 ok(!!findButton(w, 'بله، همه را پاک کن', '.settings-modal button'), 'clear-all asks for confirmation first');
 ok(text(w).includes('میان‌برهای صفحه‌کلید'), 'keyboard shortcuts documented in settings');
+Object.defineProperty(w.navigator, 'onLine', { configurable: true, value: false });
+w.dispatchEvent(new w.Event('offline'));
+await tick();
+ok(!!w.document.querySelector('.offline-banner') && !!w.document.querySelector('.offline-badge'),
+  'an offline banner and header badge appear only after the browser reports offline');
+Object.defineProperty(w.navigator, 'onLine', { configurable: true, value: true });
+w.dispatchEvent(new w.Event('online'));
+await tick();
+ok(!w.document.querySelector('.offline-banner'), 'the offline banner disappears when connectivity returns');
 click(w, w.document.querySelector('.settings-modal .close-button'));
 await tick();
 
@@ -540,6 +558,7 @@ await tick();
 ok(w.document.documentElement.dir === 'ltr', 'English switches the whole app to left-to-right');
 ok(w.document.documentElement.lang === 'en', 'the document language follows the choice');
 ok(w.localStorage.getItem('taghvim-lang') === 'en', 'the language preference persists');
+ok(text(w).includes('Offline & national-network access'), 'offline setup guidance is translated too');
 ok(text(w).includes('My week') && text(w).includes('Exams'), 'the navigation is translated');
 ok(text(w).includes("This week's plans"), 'the weekly heading is translated');
 ok(['Saturday', 'Sunday', 'Friday'].every((day) => text(w).includes(day)), 'weekday names are English');

@@ -1,6 +1,6 @@
 /* Shared PWA hooks. This tiny file is intentionally local and versioned with the app. */
 (() => {
-  const LP_APP_VERSION = '1.1.0';
+  const LP_APP_VERSION = '1.2.0';
   let deferredInstallPrompt = null;
 
   const isStandalone = () => Boolean(

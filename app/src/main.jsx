@@ -123,6 +123,42 @@ function normalizePlan(raw) {
   };
 }
 
+/* Exam difficulty: easy → a small review, medium → one night, hard → days of prep.
+   Each level has its own "alert" thresholds (in days) that drive the card colour
+   and the whole-app theme change near the exam. */
+const examLevels = {
+  easy: { critical: 1, warning: 2 },
+  medium: { critical: 1, warning: 3 },
+  hard: { critical: 2, warning: 5 },
+};
+const examLevelIds = ['easy', 'medium', 'hard'];
+const DEFAULT_EXAM_LEVEL = 'easy';
+
+function normalizeExamLevel(value) {
+  return Object.hasOwn(examLevels, value) ? value : DEFAULT_EXAM_LEVEL;
+}
+
+/* Distance → alert level. `critical` is the red line (1 day left for easy/medium,
+   2 days for hard) and `warning` is the orange one (2 / 3 / 5 days). */
+function examAlertLevel(exam, now) {
+  const days = daysUntil(exam.date, now);
+  if (!Number.isFinite(days) || days < 0) return null;
+  const level = examLevels[normalizeExamLevel(exam.level)];
+  if (days <= level.critical) return 'critical';
+  if (days <= level.warning) return 'warning';
+  return null;
+}
+
+/* Sort by date, except that a red (critical) exam always floats to the top and
+   orange (warning) ones come right after, so the urgent window is visible first. */
+function sortExams(items, now) {
+  const rank = (exam) => {
+    const level = examAlertLevel(exam, now);
+    return level === 'critical' ? 0 : level === 'warning' ? 1 : 2;
+  };
+  return [...items].sort((a, b) => rank(a) - rank(b) || parseLocalDate(a.date) - parseLocalDate(b.date));
+}
+
 function normalizeExam(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const name = String(raw.name ?? raw.title ?? '').trim();
@@ -132,6 +168,7 @@ function normalizeExam(raw) {
     id: raw.id ? String(raw.id) : uid(),
     name: name.slice(0, 80),
     date,
+    level: normalizeExamLevel(raw.level),
     description: String(raw.description ?? raw.desc ?? '').trim().slice(0, 500),
     topics: Array.isArray(raw.topics) ? raw.topics.map(normalizeTopic).filter(Boolean).slice(0, 60) : [],
   };
@@ -352,48 +389,11 @@ function daysUntil(value, now) {
   return Math.round((target - today) / 86400000);
 }
 
-/* ---------- countdown: live time left until the day of the exam begins ---------- */
-function countdownParts(exam, now) {
-  const target = parseLocalDate(exam.date);
-  if (!isValidDate(target)) return null;
-  target.setHours(0, 0, 0, 0);
-  const diff = target.getTime() - now.getTime();
-  if (diff <= 0) return null; // the exam day has already begun
-  return {
-    days: Math.floor(diff / 86400000),
-    hours: Math.floor((diff % 86400000) / 3600000),
-    minutes: Math.floor((diff % 3600000) / 60000),
-    seconds: Math.floor((diff % 60000) / 1000),
-    diff,
-  };
-}
-
-/* Monospace clock: "d:hh:mm:ss" or "hh:mm:ss". */
-function countdownClock(exam, now, format) {
-  const parts = countdownParts(exam, now);
-  if (!parts) return '';
-  const pad = (value) => format.digits(String(value).padStart(2, '0'));
-  const clock = `${pad(parts.hours)}:${pad(parts.minutes)}:${pad(parts.seconds)}`;
-  return parts.days > 0 ? `${format.digits(parts.days)}:${clock}` : clock;
-}
-
-function countdownText(exam, now, t, format) {
-  const parts = countdownParts(exam, now);
-  if (!parts) return t('countdown.now');
-  if (parts.days > 0) {
-    return t('countdown.daysHours', { days: format.num(parts.days), hours: format.num(parts.hours) });
-  }
-  if (parts.hours > 0) {
-    return t('countdown.hoursMinutes', { hours: format.num(parts.hours), minutes: format.num(parts.minutes) });
-  }
-  return t('countdown.minutesLeft', { minutes: format.num(parts.minutes) });
-}
-
 /* exam → "امروز" / "فردا" / "n روز مانده" / "برگزار شده" */
 function remainingLabel(exam, now, t, format) {
   const days = daysUntil(exam.date, now);
   if (!Number.isFinite(days)) return '';
-  if (days < 0) return t('countdown.passed');
+  if (days < 0) return t('exams.held');
   if (days === 0) return t('exams.today');
   if (days === 1) return t('exams.tomorrow');
   return t('exams.daysLeft', { count: format.num(days) });
@@ -419,7 +419,7 @@ function downloadFile(filename, content, type) {
 }
 
 /* Standard iCalendar file so exams can be pushed into Google/Apple calendars. */
-function buildIcs(exams) {
+function buildIcs(exams, t) {
   const stamp = new Date().toISOString().replace(/[-:]|\.\d{3}/g, '');
   const escape = (text) => String(text || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Taghvim//FA//', 'CALSCALE:GREGORIAN'];
@@ -427,8 +427,8 @@ function buildIcs(exams) {
     const start = exam.date.replace(/-/g, '');
     const end = parseLocalDate(exam.date);
     end.setDate(end.getDate() + 1);
-    /* The topic checklist travels inside the description, so nothing is lost. */
-    const notes = [exam.description];
+    /* The topic checklist and difficulty travel inside the description, so nothing is lost. */
+    const notes = [exam.description, `${t('examLevel.label')}: ${t(`examLevel.${normalizeExamLevel(exam.level)}`)}`];
     if (exam.topics.length) {
       notes.push(exam.topics.map((topic) => `${topic.done ? '[x]' : '[ ]'} ${topic.title}`).join('\n'));
     }
@@ -494,10 +494,14 @@ function useDialog(onClose) {
   const ref = useRef(null);
 
   useEffect(() => {
-    const previouslyFocused = document.activeElement;
     const { body } = document;
     const previousOverflow = body.style.overflow;
+    const previousActive = document.activeElement;
     body.style.overflow = 'hidden';
+    /* Focus the dialog container itself — never a text field.
+       Focusing an input on open pops the mobile keyboard (and its autofill
+       bar) the moment the user taps “new exam”, which must not happen. */
+    ref.current?.focus?.({ preventScroll: true });
 
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
@@ -509,13 +513,21 @@ function useDialog(onClose) {
       const focusable = [...ref.current.querySelectorAll(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       )].filter((el) => !el.disabled && el.getAttribute('aria-hidden') !== 'true');
-      if (!focusable.length) return;
+      if (!focusable.length) {
+        event.preventDefault();
+        ref.current.focus({ preventScroll: true });
+        return;
+      }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      const active = document.activeElement;
+      if (active === ref.current && !event.shiftKey) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && (active === first || active === ref.current)) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && active === last) {
         event.preventDefault();
         first.focus();
       }
@@ -525,8 +537,8 @@ function useDialog(onClose) {
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       body.style.overflow = previousOverflow;
-      if (previouslyFocused?.focus) {
-        try { previouslyFocused.focus(); } catch { /* ignore */ }
+      if (previousActive?.focus) {
+        try { previousActive.focus({ preventScroll: true }); } catch { /* ignore */ }
       }
     };
   }, [onClose]);
@@ -567,6 +579,12 @@ function StickerPicker({ value = '', onChange, onSelect, label, compact = false,
           <span>{t('sticker.custom')}</span>
           <input
             type="text"
+            inputMode="text"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            enterKeyHint="done"
             maxLength={24}
             value={sticker}
             onChange={(event) => onChange?.(normalizeSticker(event.target.value))}
@@ -595,6 +613,7 @@ function Modal({ data, onClose, onPlan, onExam, t, format }) {
     name: data.name || '',
     day: data.day ?? 0,
     date: data.date || toInput(new Date()),
+    level: normalizeExamLevel(data.level),
     time: data.time || '',
     color: data.color || planColors[(data.day ?? 0) % planColors.length],
     sticker: normalizeSticker(data.sticker),
@@ -613,6 +632,8 @@ function Modal({ data, onClose, onPlan, onExam, t, format }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
+        tabIndex={-1}
+        autoComplete="off"
         onSubmit={(event) => {
           event.preventDefault();
           if (!canSubmit) return;
@@ -621,6 +642,7 @@ function Modal({ data, onClose, onPlan, onExam, t, format }) {
               id: value.id,
               name: value.name.trim(),
               date: value.date,
+              level: normalizeExamLevel(value.level),
               description: value.description.trim(),
             });
           } else {
@@ -647,7 +669,6 @@ function Modal({ data, onClose, onPlan, onExam, t, format }) {
         <label className="field">
           <span>{isExam ? t('modal.examName') : t('modal.planTitle')}</span>
           <input
-            autoFocus
             required
             maxLength={80}
             value={label}
@@ -657,13 +678,33 @@ function Modal({ data, onClose, onPlan, onExam, t, format }) {
         </label>
 
         {isExam ? (
-          <DateField
-            label={t('modal.examDate')}
-            value={value.date}
-            onChange={(date) => setValue({ ...value, date })}
-            t={t}
-            format={format}
-          />
+          <>
+            <DateField
+              label={t('modal.examDate')}
+              value={value.date}
+              onChange={(date) => setValue({ ...value, date })}
+              t={t}
+              format={format}
+            />
+            <fieldset className="difficulty-field">
+              <legend>{t('modal.examLevel')}</legend>
+              <div className="difficulty-options" role="group" aria-label={t('modal.examLevel')}>
+                {examLevelIds.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    className={`difficulty-option level-${level} ${value.level === level ? 'selected' : ''}`}
+                    aria-pressed={value.level === level}
+                    onClick={() => setValue({ ...value, level })}
+                  >
+                    <i aria-hidden="true" />
+                    <b>{t(`examLevel.${level}`)}</b>
+                    <small>{t(`examLevel.${level}.hint`)}</small>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          </>
         ) : (
           <div className="field-row">
             <label className="field">
@@ -674,7 +715,12 @@ function Modal({ data, onClose, onPlan, onExam, t, format }) {
             </label>
             <label className="field">
               <span>{t('modal.time')} <small>{t('modal.optional')}</small></span>
-              <input type="time" value={value.time} onChange={(event) => setValue({ ...value, time: event.target.value })} />
+              <input
+                type="time"
+                autoComplete="off"
+                value={value.time}
+                onChange={(event) => setValue({ ...value, time: event.target.value })}
+              />
             </label>
           </div>
         )}
@@ -685,6 +731,10 @@ function Modal({ data, onClose, onPlan, onExam, t, format }) {
             value={value.description}
             maxLength={500}
             rows={3}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="sentences"
+            enterKeyHint="enter"
             onChange={(event) => setValue({ ...value, description: event.target.value })}
             placeholder={isExam ? t('modal.examDescriptionPlaceholder') : t('modal.planDescriptionPlaceholder')}
           />
@@ -753,7 +803,7 @@ function SettingsPanel({
 
   return (
     <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="modal settings-modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <section className="modal settings-modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="settings-title" tabIndex={-1}>
         <div className="modal-head">
           <div>
             <span className="eyebrow">{t('settings.eyebrow')}</span>
@@ -1014,6 +1064,11 @@ function PlanTasks({ plan, thisWeek, onToggle, onAdd, onRemove, onStickerChange,
         <input
           value={draft}
           maxLength={80}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          enterKeyHint="done"
           onChange={(event) => setDraft(event.target.value)}
           placeholder={plan.tasks.length ? t('task.addPlaceholder') : t('task.firstPlaceholder')}
           aria-label={t('task.addTo', { title: plan.title })}
@@ -1072,6 +1127,11 @@ function ExamTopics({ exam, onToggle, onAdd, onRemove, t }) {
         <input
           value={draft}
           maxLength={80}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          enterKeyHint="done"
           onChange={(event) => setDraft(event.target.value)}
           placeholder={exam.topics.length ? t('topics.addPlaceholder') : t('topics.firstPlaceholder')}
           aria-label={t('topics.addTo', { name: exam.name })}
@@ -1176,7 +1236,7 @@ function App() {
     };
   }, []);
 
-  /* Keep the clock (and every countdown) fresh without a heavy timer. */
+  /* Keep "today", remaining days and the exam alerts fresh without a heavy timer. */
   useEffect(() => {
     const tick = () => setNow((current) => {
       const next = new Date();
@@ -1263,9 +1323,12 @@ function App() {
     [plans, matchesQuery],
   );
 
-  const upcoming = useMemo(() => exams
-    .filter((exam) => daysUntil(exam.date, now) >= 0)
-    .sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date)), [exams, now]);
+  /* Exams inside their difficulty window come first (the most alarming on top),
+     then the rest by date. */
+  const upcoming = useMemo(() => sortExams(
+    exams.filter((exam) => daysUntil(exam.date, now) >= 0),
+    now,
+  ), [exams, now]);
 
   const past = useMemo(() => exams
     .filter((exam) => daysUntil(exam.date, now) < 0)
@@ -1288,27 +1351,14 @@ function App() {
   const doneTasks = useMemo(() => allTasks.filter((task) => task.done === thisWeek).length, [allTasks, thisWeek]);
   const donePercent = allTasks.length ? Math.round((doneTasks / allTasks.length) * 100) : 0;
   const nextExam = upcoming[0];
-  const nextDaysLeft = nextExam ? daysUntil(nextExam.date, now) : Number.POSITIVE_INFINITY;
-  /* Alert level drives a global "exam is near" theme change so the user can't miss it. */
-  const alertLevel = !nextExam
-    ? null
-    : nextDaysLeft <= 0
-      ? 'critical'
-      : nextDaysLeft <= 3
-        ? 'urgent'
-        : nextDaysLeft <= 7
-          ? 'soon'
-          : null;
-  const alertExam = alertLevel ? nextExam : null;
+  /* Alert level drives a global "exam is near" theme change so the user can't miss it.
+     Thresholds depend on the exam difficulty (red = tomorrow / orange = the days before). */
+  const alertExam = upcoming.find((exam) => examAlertLevel(exam, now) === 'critical')
+    || upcoming.find((exam) => examAlertLevel(exam, now) === 'warning')
+    || null;
+  const alertLevel = alertExam ? examAlertLevel(alertExam, now) : null;
+  const alertDaysLeft = alertExam ? daysUntil(alertExam.date, now) : 0;
   const tomorrow = upcoming.find((exam) => daysUntil(exam.date, now) === 1);
-
-  /* The live countdown needs a one-second tick — but only while it is on screen. */
-  const liveCountdown = Boolean(nextExam) && daysUntil(nextExam.date, now) <= 2;
-  useEffect(() => {
-    if (!liveCountdown) return undefined;
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, [liveCountdown]);
 
   /* Appearance: apply the resolved theme, browser UI colour, and exam-alert accent. */
   useEffect(() => {
@@ -1320,8 +1370,7 @@ function App() {
       const meta = document.querySelector('meta[name="theme-color"]');
       let color = resolved === 'dark' ? '#15151e' : '#282549';
       if (alertLevel === 'critical') color = resolved === 'dark' ? '#4a1a22' : '#8a2334';
-      else if (alertLevel === 'urgent') color = resolved === 'dark' ? '#4a2c18' : '#a1501d';
-      else if (alertLevel === 'soon') color = resolved === 'dark' ? '#3f2f19' : '#86681f';
+      else if (alertLevel === 'warning') color = resolved === 'dark' ? '#4a2c18' : '#a1501d';
       if (meta) meta.setAttribute('content', color);
     };
     applyTheme();
@@ -1573,6 +1622,7 @@ function App() {
       ? items.map((item) => (item.id === data.id ? { ...exam, id: item.id, topics: item.topics } : item))
       : [...items, exam]));
     setModal(null);
+    setSelectedDay(dayIndex(new Date()));
     notify(editing ? t('toast.examSaved') : t('toast.examAdded'));
   }
 
@@ -1724,7 +1774,7 @@ function App() {
 
   function exportIcs() {
     if (!exams.length) return;
-    const okFile = downloadFile(`taghvim-exams-${toInput(new Date())}.ics`, buildIcs(exams), 'text/calendar');
+    const okFile = downloadFile(`taghvim-exams-${toInput(new Date())}.ics`, buildIcs(exams, t), 'text/calendar');
     notify(okFile ? t('toast.icsReady') : t('toast.icsFailed'));
   }
 
@@ -1774,6 +1824,11 @@ function App() {
         ref={searchRef}
         type="search"
         value={queryText}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        enterKeyHint="search"
         onChange={(event) => setQueryText(event.target.value)}
         placeholder={tab === 'week' ? t('search.plans') : t('search.exams')}
         aria-label={t('search.label')}
@@ -1789,26 +1844,21 @@ function App() {
   const kickerIcon = alertLevel
     ? (alertLevel === 'critical' ? <AlertTriangle size={15} /> : <Flame size={15} />)
     : <Sparkles size={15} />;
-  const kickerText = alertLevel === 'critical'
-    ? t('hero.kicker.critical')
-    : alertLevel === 'urgent'
-      ? t('hero.kicker.urgent', { remaining: countdownText(alertExam, now, t, format) })
-      : alertLevel === 'soon'
-        ? t('hero.kicker.soon')
-        : (tab === 'week' ? t('hero.kicker.week') : t('hero.kicker.exams'));
-  const heroTitle = alertLevel
-    ? (nextDaysLeft <= 0
+  const kickerText = alertLevel
+    ? (alertLevel === 'critical' ? t('hero.kicker.critical') : t('hero.kicker.warning'))
+    : (tab === 'week' ? t('hero.kicker.week') : t('hero.kicker.exams'));
+  const alertTitle = alertExam
+    ? (alertDaysLeft <= 0
       ? t('hero.title.examToday', { name: alertExam.name })
-      : nextDaysLeft === 1
+      : alertDaysLeft === 1
         ? t('hero.title.examTomorrow', { name: alertExam.name })
-        : t('hero.title.examDays', { name: alertExam.name, count: format.num(nextDaysLeft) }))
+        : t('hero.title.examDays', { name: alertExam.name, count: format.num(alertDaysLeft) }))
+    : '';
+  const heroTitle = alertLevel
+    ? alertTitle
     : (tab === 'week' ? t('hero.title.week') : t('hero.title.exams'));
   const heroDesc = alertLevel
-    ? (nextDaysLeft <= 0
-      ? t('hero.desc.examToday')
-      : nextDaysLeft === 1
-        ? t('hero.desc.examTomorrow')
-        : t('hero.desc.examDays'))
+    ? t(`examLevel.${normalizeExamLevel(alertExam.level)}.tip`)
     : (tab === 'week'
       ? (todayPlans.length
         ? (todayTasks.length
@@ -1820,8 +1870,6 @@ function App() {
       : t('hero.desc.exams'));
   const heroActionLabel = alertLevel ? t('hero.action.goExams') : (tab === 'week' ? t('hero.action.newPlan') : t('hero.action.newExam'));
   const onHeroAction = alertLevel ? () => switchTab('exams') : openNew;
-
-  const countdown = alertExam ? countdownParts(alertExam, now) : null;
 
   return (
     <div className={`app-shell ${alertLevel ? `exam-alert exam-alert-${alertLevel}` : ''}`} data-alert={alertLevel || ''}>
@@ -1865,17 +1913,8 @@ function App() {
             {alertLevel === 'critical' ? <AlertTriangle size={22} /> : <Flame size={22} />}
           </div>
           <div className="banner-copy">
-            <b>
-              {nextDaysLeft <= 0
-                ? t('hero.title.examToday', { name: alertExam.name })
-                : nextDaysLeft === 1
-                  ? t('hero.title.examTomorrow', { name: alertExam.name })
-                  : t('hero.title.examDays', { name: alertExam.name, count: format.num(nextDaysLeft) })}
-            </b>
-            <span>
-              {format.longDate(parseLocalDate(alertExam.date))} — {remainingLabel(alertExam, now, t, format)}
-              {countdown && <i className="live-clock" dir="ltr">{countdownClock(alertExam, now, format)}</i>}
-            </span>
+            <b>{alertTitle}</b>
+            <span>{format.longDate(parseLocalDate(alertExam.date))} — {remainingLabel(alertExam, now, t, format)}</span>
           </div>
           <button className="banner-action" onClick={() => switchTab('exams')}>{t('action.view')}</button>
         </div>
@@ -1896,15 +1935,17 @@ function App() {
             {alertLevel && alertExam ? (
               <>
                 <div className="summary-item wide-summary alert-summary">
-                  <span>{nextDaysLeft <= 0 ? t('summary.examToday') : nextDaysLeft === 1 ? t('summary.examTomorrow') : t('summary.nextExam')}</span>
+                  <span>{alertDaysLeft <= 0 ? t('summary.examToday') : alertDaysLeft === 1 ? t('summary.examTomorrow') : t('summary.nextExam')}</span>
                   <b>{alertExam.name}</b>
                   <small>{format.longDate(parseLocalDate(alertExam.date))}</small>
                 </div>
                 <div className="summary-divider" />
-                <div className="summary-item countdown-summary">
-                  <span>{t('summary.timeLeft')}</span>
-                  <b className="countdown-big" dir="ltr">{countdown ? countdownClock(alertExam, now, format) : t('exams.today')}</b>
-                  <small>{countdown ? countdownText(alertExam, now, t, format) : format.longDate(parseLocalDate(alertExam.date))}</small>
+                <div className="summary-item alert-level-summary">
+                  <span>{t('summary.examLevel')}</span>
+                  <b className={`level-chip level-${normalizeExamLevel(alertExam.level)}`}>
+                    {t(`examLevel.${normalizeExamLevel(alertExam.level)}`)}
+                  </b>
+                  <small>{t(`examLevel.${normalizeExamLevel(alertExam.level)}.hint`)}</small>
                 </div>
               </>
             ) : tab === 'week' ? (
@@ -2113,12 +2154,17 @@ function App() {
             <div className="exam-list">
               {visibleUpcoming.map((exam) => {
                 const distance = daysUntil(exam.date, now);
-                const clock = distance >= 0 && distance <= 2 ? countdownClock(exam, now, format) : '';
+                const level = normalizeExamLevel(exam.level);
+                const alert = examAlertLevel(exam, now);
                 const doneTopics = exam.topics.filter((topic) => topic.done).length;
                 const topicPercent = exam.topics.length ? Math.round((doneTopics / exam.topics.length) * 100) : 0;
                 const topicsOpen = expandedExam === exam.id;
                 return (
-                  <article className={`exam-card ${distance <= 1 ? 'urgent' : ''}`} key={exam.id}>
+                  <article className={`exam-card level-${level} ${alert ? `exam-alert-card alert-${alert}` : ''}`} key={exam.id}>
+                    <span className={`level-badge level-${level}`} title={t(`examLevel.${level}.hint`)}>
+                      <i aria-hidden="true" />
+                      {t(`examLevel.${level}`)}
+                    </span>
                     <div className="exam-date">
                       <span>{format.monthName(parseLocalDate(exam.date))}</span>
                       <b>{format.dayNumber(parseLocalDate(exam.date))}</b>
@@ -2126,12 +2172,12 @@ function App() {
                     <div className="exam-info">
                       <div className="exam-title-row">
                         <h3>{exam.name}</h3>
-                        <span className="remaining">
+                        <span className={`remaining level-${level} ${alert ? `alert-${alert}` : ''}`} title={t(`examLevel.${level}.hint`)}>
                           <Clock3 size={14} />{remainingLabel(exam, now, t, format)}
-                          {clock && <i className="live-clock" dir="ltr">{clock}</i>}
                         </span>
                       </div>
                       <small>{format.longDate(parseLocalDate(exam.date))}</small>
+                      <small className="exam-level-hint"><i aria-hidden="true" />{t(`examLevel.${level}.hint`)}</small>
                       {exam.description && <p className="exam-description">{exam.description}</p>}
 
                       <div className="exam-topics-block">

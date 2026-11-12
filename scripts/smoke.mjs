@@ -27,6 +27,9 @@ const ok = (cond, label) => {
   if (!cond) failures += 1;
 };
 
+/* React 19 mounts its tree from a scheduled task, so a single 60 ms sleep after
+   the import is a race. Poll until the app shell is actually in the DOM (or give
+   up after ~3 s), then let effects flush. */
 async function boot(seedStorage = {}) {
   const html = readFileSync(join(rootDir, 'index.html'), 'utf8');
   const dom = new JSDOM(html, { url: PAGE_URL, pretendToBeVisual: true });
@@ -46,6 +49,10 @@ async function boot(seedStorage = {}) {
   window.addEventListener('error', (e) => console.error('PAGE ERROR:', e.message));
   const bundleUrl = pathToFileURL(join(rootDir, 'assets', bundleFile)).href;
   await import(`${bundleUrl}?case=${Math.random()}`); // cache-bust: re-run the app per scenario
+  const started = Date.now();
+  while (!window.document.querySelector('.app-shell') && Date.now() - started < 3000) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
   await new Promise((r) => setTimeout(r, 60)); // flush effects
   return window;
 }
@@ -128,6 +135,14 @@ ok(text(w).includes('فیزیک'), 'exams tab shows the exam after navigation');
 click(w, findButton(w, 'امتحان جدید', '.exam-section-head button'));
 await tick();
 ok(!!w.document.querySelector('.modal .date-trigger'), 'exam modal opens with a calendar date field');
+ok(query(w, '.modal .difficulty-option').length === 3, 'the exam form offers three difficulty levels');
+ok(query(w, '.modal .difficulty-option')[0]?.classList.contains('selected'), 'an easy exam is chosen by default');
+ok(w.document.activeElement === w.document.querySelector('.modal'),
+  'opening the exam dialog focuses the dialog, not the text field (no keyboard)');
+click(w, query(w, '.modal .difficulty-option')[2]);
+await tick();
+ok(query(w, '.modal .difficulty-option')[2]?.getAttribute('aria-pressed') === 'true',
+  'choosing “hard” marks the difficulty button');
 click(w, w.document.querySelector('.modal .date-trigger'));
 await tick();
 ok(!!w.document.querySelector('.datepicker'), 'the Persian calendar opens inside the dialog');
@@ -146,6 +161,8 @@ type(w, w.document.querySelector('.modal textarea'), 'مرور فصل‌های �
 w.document.querySelector('.modal')?.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
 await tick();
 ok(w.localStorage.getItem('taghvim-exams')?.includes('مرور فصل‌های یک و دو'), 'exam description is saved to local storage');
+ok(JSON.parse(w.localStorage.getItem('taghvim-exams')).pop()?.level === 'hard',
+  'the chosen exam difficulty is saved');
 ok(query(w, '.exam-description').some((node) => node.textContent === 'مرور فصل‌های یک و دو'), 'saved exam description appears on its card');
 ok(!w.document.querySelector('.modal'), 'submitting the exam closes the dialog');
 ok(w.document.body.style.overflow !== 'hidden', 'scroll lock is released again');
@@ -157,14 +174,14 @@ click(w, w.document.querySelector('.icon-button[aria-label="تنظیمات"]'));
 await tick();
 ok(text(w).includes('تنظیمات تقویم'), 'settings panel opens');
 ok(text(w).includes('آفلاین و اینترنت ملی'), 'settings honestly explain the domain and offline limitation');
-ok(!!w.document.querySelector('#settingsVersion')?.textContent.includes('1.1.0'), 'the settings panel shows the app version');
+ok(!!w.document.querySelector('#settingsVersion')?.textContent.includes('1.2.0'), 'the settings panel shows the app version');
 ok(!!findButton(w, 'ذخیره آفلاین', '.settings-modal button'), 'the user can repair/cache the offline shell');
 ok(!!findButton(w, 'تست آفلاین', '.settings-modal button'), 'the user can verify offline cache completeness');
 ok(!!findButton(w, 'نصب روی گوشی', '.settings-modal button'), 'the PWA install action is available');
 await tick(40);
 ok(['granted', 'not-granted', 'unsupported'].includes(w.localStorage.getItem('taghvim-storage-persisted')),
   'persistent-storage support/status is saved in localStorage');
-ok(w.localStorage.getItem('taghvim-settingsVersion') === '1.1.0', 'settings version is stored locally');
+ok(w.localStorage.getItem('taghvim-settingsVersion') === '1.2.0', 'settings version is stored locally');
 ok(query(w, '.theme-options button').length === 3, 'automatic, light, and dark themes are available');
 click(w, findButton(w, 'تیره', '.theme-options button'));
 await tick();
@@ -531,21 +548,46 @@ click(w, w.document.querySelector('.search-clear'));
 await tick();
 ok(query(w, '.exam-topics .topic-item').length === 3, 'the checklist keeps every topic after searching');
 
-/* ---------- 12. live countdown ---------- */
-console.log('\nScenario 12: live countdown to the next exam');
-w = await boot({ 'taghvim-exams': JSON.stringify([{ id: 'e1', name: 'فیزیک', date: futureIso(1) }]) });
-const clockText = () => w.document.querySelector('.live-clock')?.textContent || '';
-ok(!!w.document.querySelector('.live-clock'), 'an exam within two days gets a live countdown');
-ok(/^[۰-۹]+:[۰-۹]{2}:[۰-۹]{2}:[۰-۹]{2}$/.test(clockText())
-  || /^[۰-۹]{2}:[۰-۹]{2}:[۰-۹]{2}$/.test(clockText()), 'the countdown shows days, hours, minutes and seconds');
-const beforeTick = clockText();
-await tick(1200);
-ok(clockText() !== beforeTick, 'the countdown keeps ticking every second');
-ok((w.document.querySelector('.countdown-big')?.textContent || '').includes(':'),
-  'the hero summary shows the same live countdown');
+/* ---------- 12. exam difficulty + alert thresholds ---------- */
+console.log('\nScenario 12: exam difficulty colours and the exam-near theme');
+const examSeed = (name, level, days) => ({ id: name, name, level, date: futureIso(days) });
+w = await boot({
+  'taghvim-exams': JSON.stringify([
+    examSeed('آسون نزدیک', 'easy', 1),
+    examSeed('متوسط دور', 'medium', 4),
+    examSeed('سخت دور', 'hard', 4),
+  ]),
+});
+ok(!w.document.querySelector('.live-clock') && !w.document.querySelector('.countdown-big'),
+  'the live countdown is gone from the app');
+ok(w.document.querySelector('.app-shell')?.classList.contains('exam-alert-critical'),
+  'an easy exam tomorrow turns the app red (critical)');
+ok(w.document.querySelector('.exam-alert-banner')?.classList.contains('level-critical'),
+  'the alert banner is red for an exam tomorrow');
 click(w, findButton(w, 'امتحان‌ها', 'nav button'));
 await tick();
-ok(!!w.document.querySelector('.exam-card .live-clock'), 'the exam card carries its own countdown');
+const examCardOf = (title) => query(w, '.exam-card').find((card) => card.textContent.includes(title));
+ok(examCardOf('آسون نزدیک')?.classList.contains('level-easy') && examCardOf('آسون نزدیک')?.classList.contains('alert-critical'),
+  'the easy exam card is green and flagged red because it is tomorrow');
+ok(examCardOf('سخت دور')?.classList.contains('level-hard') && examCardOf('سخت دور')?.classList.contains('alert-warning'),
+  'a hard exam four days away is already in its orange window (5-day rule)');
+ok(!examCardOf('متوسط دور')?.classList.contains('alert-warning')
+  && !examCardOf('متوسط دور')?.classList.contains('alert-critical'),
+  'a medium exam four days away is still calm (its orange window starts at 3 days)');
+ok(Boolean(query(w, '.level-badge.level-easy').length) && Boolean(query(w, '.level-badge.level-hard').length),
+  'every exam card shows its difficulty');
+
+w = await boot({ 'taghvim-exams': JSON.stringify([examSeed('سخت نزدیک', 'hard', 2)]) });
+ok(w.document.querySelector('.app-shell')?.classList.contains('exam-alert-critical'),
+  'a hard exam in two days is already red');
+w = await boot({ 'taghvim-exams': JSON.stringify([examSeed('سخت هفته', 'hard', 4)]) });
+ok(w.document.querySelector('.app-shell')?.classList.contains('exam-alert-warning'),
+  'a hard exam in four days turns the app orange');
+w = await boot({ 'taghvim-exams': JSON.stringify([examSeed('آسون هفته', 'easy', 2)]) });
+ok(w.document.querySelector('.app-shell')?.classList.contains('exam-alert-warning'),
+  'an easy exam in two days turns the app orange');
+ok(!w.document.querySelector('.app-shell')?.classList.contains('exam-alert-critical'),
+  'an easy exam in two days is not red yet');
 
 /* ---------- 13. languages (Persian / English) ---------- */
 console.log('\nScenario 13: languages, direction and calendar');

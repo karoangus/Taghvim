@@ -18,22 +18,29 @@
   --danger: #d94f67;
   --danger-soft: #fff0f2;
   --success: #168a69;
-  --warning: #e3784f;
+  --warning: #d9642c;
+  --warning-strong: #b64f1c;
+  --warning-soft: #fff3ea;
+  --warning-hero-start: #8e3c12;
+  --warning-hero-end: #d87a3f;
   --alert: #c43850;
   --alert-strong: #a82b41;
   --alert-soft: #fff0f3;
   --alert-contrast: #ffffff;
   --alert-hero-start: #8a1e33;
   --alert-hero-end: #c74a3b;
-  --urgent: #d9642c;
-  --urgent-strong: #b64f1c;
-  --urgent-soft: #fff3ea;
-  --urgent-hero-start: #8e3c12;
-  --urgent-hero-end: #d87a3f;
-  --soon: #c98a18;
-  --soon-soft: #fdf6e2;
-  --soon-hero-start: #7a5510;
-  --soon-hero-end: #c49230;
+  --easy: #168a69;
+  --easy-strong: #11765a;
+  --easy-soft: #e8f7f1;
+  --easy-line: #bfe8da;
+  --medium: #c9860f;
+  --medium-strong: #a76c05;
+  --medium-soft: #fdf5e0;
+  --medium-line: #f0dcae;
+  --hard: #c43850;
+  --hard-strong: #a82b41;
+  --hard-soft: #fff0f3;
+  --hard-line: #f5ccd5;
   --shadow-sm: 0 6px 18px rgba(39, 37, 74, 0.06);
   --shadow-md: 0 18px 50px rgba(35, 32, 71, 0.13);
   --radius-lg: 24px;
@@ -60,22 +67,29 @@
   --danger: #f17b8e;
   --danger-soft: #3b242e;
   --success: #55caa6;
-  --warning: #ff9b75;
+  --warning: #ff9b65;
+  --warning-strong: #ffb084;
+  --warning-soft: #3f281c;
+  --warning-hero-start: #5c2809;
+  --warning-hero-end: #984c20;
   --alert: #f37088;
   --alert-strong: #ff8a9e;
   --alert-soft: #40212b;
   --alert-contrast: #1c0d13;
   --alert-hero-start: #5b1424;
   --alert-hero-end: #8d3228;
-  --urgent: #ff9b65;
-  --urgent-strong: #ffb084;
-  --urgent-soft: #3f281c;
-  --urgent-hero-start: #5c2809;
-  --urgent-hero-end: #984c20;
-  --soon: #e6b54b;
-  --soon-soft: #3c3118;
-  --soon-hero-start: #50380a;
-  --soon-hero-end: #8a631a;
+  --easy: #46c79f;
+  --easy-strong: #6fd7b6;
+  --easy-soft: #1d3b33;
+  --easy-line: #2f5b4d;
+  --medium: #e0ac3c;
+  --medium-strong: #f0c266;
+  --medium-soft: #3a2f16;
+  --medium-line: #5c4a22;
+  --hard: #f37088;
+  --hard-strong: #ff8a9e;
+  --hard-soft: #40212b;
+  --hard-line: #5c313e;
   --shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.12);
   --shadow-md: 0 18px 50px rgba(0, 0, 0, 0.28);
 }
@@ -469,7 +483,7 @@ main {
   place-items: center;
   flex: 0 0 auto;
   color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 11%, var(--surface));
+  background: var(--warning-soft);
   border-radius: 13px;
 }
 
@@ -821,6 +835,92 @@ main {
   align-items: center;
 }
 
+.difficulty-field {
+  min-width: 0;
+  margin: 0 0 15px;
+  padding: 0;
+  border: 0;
+}
+
+.difficulty-field legend {
+  padding: 0;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 0.625rem;
+  font-weight: 800;
+}
+
+.difficulty-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.difficulty-option {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 9px 10px;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  text-align: start;
+}
+
+.difficulty-option i {
+  width: 9px;
+  height: 9px;
+  margin-bottom: 3px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.difficulty-option b {
+  color: var(--text);
+  font-size: 0.75rem;
+}
+
+.difficulty-option small {
+  font-size: 0.5625rem;
+  line-height: 1.7;
+  opacity: 0.85;
+}
+
+.difficulty-option:hover {
+  border-color: var(--line-strong);
+}
+
+.difficulty-option.level-easy {
+  color: var(--easy);
+}
+
+.difficulty-option.level-medium {
+  color: var(--medium);
+}
+
+.difficulty-option.level-hard {
+  color: var(--hard);
+}
+
+.difficulty-option.level-easy.selected {
+  background: var(--easy-soft);
+  border-color: var(--easy);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--easy) 16%, transparent);
+}
+
+.difficulty-option.level-medium.selected {
+  background: var(--medium-soft);
+  border-color: var(--medium);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--medium) 16%, transparent);
+}
+
+.difficulty-option.level-hard.selected {
+  background: var(--hard-soft);
+  border-color: var(--hard);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--hard) 16%, transparent);
+}
+
 .exam-list {
   display: grid;
   gap: 11px;
@@ -839,8 +939,59 @@ main {
   box-shadow: var(--shadow-sm);
 }
 
-.exam-card.urgent {
-  border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
+/* Difficulty badge — the card itself (date block + accent) is green / yellow / red. */
+.level-badge {
+  position: absolute;
+  top: 9px;
+  inset-inline-end: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.5625rem;
+  font-weight: 800;
+  line-height: 1.9;
+}
+
+.level-badge i {
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.level-badge.level-easy {
+  color: var(--easy);
+  background: var(--easy-soft);
+  border-color: var(--easy-line);
+}
+
+.level-badge.level-medium {
+  color: var(--medium);
+  background: var(--medium-soft);
+  border-color: var(--medium-line);
+}
+
+.level-badge.level-hard {
+  color: var(--hard);
+  background: var(--hard-soft);
+  border-color: var(--hard-line);
+}
+
+.exam-card {
+  padding-top: 26px;
+}
+
+.exam-card.exam-alert-card.alert-critical {
+  border-color: color-mix(in srgb, var(--alert) 38%, var(--line));
+}
+
+.exam-card.exam-alert-card.alert-warning {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--line));
 }
 
 .exam-date {
@@ -856,9 +1007,19 @@ main {
   border-radius: 15px;
 }
 
-.exam-card.urgent .exam-date {
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+.exam-card.level-easy .exam-date {
+  color: var(--easy);
+  background: var(--easy-soft);
+}
+
+.exam-card.level-medium .exam-date {
+  color: var(--medium);
+  background: var(--medium-soft);
+}
+
+.exam-card.level-hard .exam-date {
+  color: var(--hard);
+  background: var(--hard-soft);
 }
 
 .exam-date span {
@@ -904,9 +1065,14 @@ main {
   font-weight: 800;
 }
 
-.urgent .remaining {
+.remaining.alert-critical {
+  color: var(--alert);
+  background: var(--alert-soft);
+}
+
+.remaining.alert-warning {
   color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  background: var(--warning-soft);
 }
 
 .exam-info p {
@@ -934,6 +1100,37 @@ main {
   margin-top: 6px;
   color: var(--muted);
   font-size: 0.5625rem;
+}
+
+/* The difficulty hint sits right under the date, tinted with the level colour. */
+.exam-info > small.exam-level-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 0.5625rem;
+  font-weight: 700;
+}
+
+.exam-level-hint i {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.exam-card.level-easy .exam-level-hint {
+  color: var(--easy);
+}
+
+.exam-card.level-medium .exam-level-hint {
+  color: var(--medium);
+}
+
+.exam-card.level-hard .exam-level-hint {
+  color: var(--hard);
 }
 
 .exam-more {
@@ -1120,6 +1317,12 @@ main {
   border-radius: 23px;
   box-shadow: var(--shadow-md);
   animation: modal-in 170ms ease-out;
+}
+
+/* The dialog itself takes focus instead of its first text field, so opening a
+   form never raises the mobile keyboard. */
+.modal:focus {
+  outline: none;
 }
 
 .modal-head {
@@ -1791,14 +1994,14 @@ main {
   direction: rtl;
 }
 
-.exam-alert-banner.level-urgent {
-  background: linear-gradient(100deg, var(--urgent-hero-start), var(--urgent-hero-end));
-  box-shadow: 0 10px 30px color-mix(in srgb, var(--urgent) 28%, transparent);
+.exam-alert-banner.level-warning {
+  background: linear-gradient(100deg, var(--warning-hero-start), var(--warning-hero-end));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--warning) 28%, transparent);
 }
 
-.exam-alert-banner.level-soon {
-  background: linear-gradient(100deg, var(--soon-hero-start), var(--soon-hero-end));
-  box-shadow: 0 10px 30px color-mix(in srgb, var(--soon) 26%, transparent);
+.exam-alert-banner.level-warning {
+  background: linear-gradient(100deg, var(--warning-hero-start), var(--warning-hero-end));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--warning) 26%, transparent);
 }
 
 .banner-icon {
@@ -1856,14 +2059,14 @@ main {
   animation: pulse-icon 2s ease-in-out infinite;
 }
 
-.exam-alert.exam-alert-urgent .logo {
-  background: var(--urgent);
-  box-shadow: 0 7px 17px color-mix(in srgb, var(--urgent) 30%, transparent);
+.exam-alert.exam-alert-warning .logo {
+  background: var(--warning);
+  box-shadow: 0 7px 17px color-mix(in srgb, var(--warning) 30%, transparent);
 }
 
-.exam-alert.exam-alert-soon .logo {
-  background: var(--soon);
-  box-shadow: 0 7px 17px color-mix(in srgb, var(--soon) 28%, transparent);
+.exam-alert.exam-alert-warning .logo {
+  background: var(--warning);
+  box-shadow: 0 7px 17px color-mix(in srgb, var(--warning) 28%, transparent);
 }
 
 .exam-alert .top-nav .nav-count.alert-pill {
@@ -1871,12 +2074,12 @@ main {
   animation: pulse-dot 1.4s ease-in-out infinite;
 }
 
-.exam-alert.exam-alert-urgent .top-nav .nav-count.alert-pill {
-  background: var(--urgent);
+.exam-alert.exam-alert-warning .top-nav .nav-count.alert-pill {
+  background: var(--warning);
 }
 
-.exam-alert.exam-alert-soon .top-nav .nav-count.alert-pill {
-  background: var(--soon);
+.exam-alert.exam-alert-warning .top-nav .nav-count.alert-pill {
+  background: var(--warning);
 }
 
 .exam-alert .icon-button:hover {
@@ -1884,14 +2087,14 @@ main {
   border-color: color-mix(in srgb, var(--alert) 35%, var(--line));
 }
 
-.exam-alert.exam-alert-urgent .icon-button:hover {
-  color: var(--urgent);
-  border-color: color-mix(in srgb, var(--urgent) 35%, var(--line));
+.exam-alert.exam-alert-warning .icon-button:hover {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
 }
 
-.exam-alert.exam-alert-soon .icon-button:hover {
-  color: var(--soon);
-  border-color: color-mix(in srgb, var(--soon) 35%, var(--line));
+.exam-alert.exam-alert-warning .icon-button:hover {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
 }
 
 /* Hero gradient swaps to alert colours */
@@ -1900,14 +2103,14 @@ main {
   box-shadow: 0 20px 55px color-mix(in srgb, var(--alert) 25%, transparent);
 }
 
-.exam-alert-urgent .hero.hero-alert {
-  background: linear-gradient(125deg, var(--urgent-hero-start), var(--urgent-hero-end));
-  box-shadow: 0 20px 55px color-mix(in srgb, var(--urgent) 25%, transparent);
+.exam-alert-warning .hero.hero-alert {
+  background: linear-gradient(125deg, var(--warning-hero-start), var(--warning-hero-end));
+  box-shadow: 0 20px 55px color-mix(in srgb, var(--warning) 25%, transparent);
 }
 
-.exam-alert-soon .hero.hero-alert {
-  background: linear-gradient(125deg, var(--soon-hero-start), var(--soon-hero-end));
-  box-shadow: 0 20px 55px color-mix(in srgb, var(--soon) 22%, transparent);
+.exam-alert-warning .hero.hero-alert {
+  background: linear-gradient(125deg, var(--warning-hero-start), var(--warning-hero-end));
+  box-shadow: 0 20px 55px color-mix(in srgb, var(--warning) 22%, transparent);
 }
 
 .hero-alert .hero-kicker {
@@ -1925,32 +2128,39 @@ main {
   background: #fff !important;
 }
 
-.exam-alert-urgent .hero-button-alert {
-  color: var(--urgent-hero-start) !important;
+.exam-alert-warning .hero-button-alert {
+  color: var(--warning-hero-start) !important;
   background: #ffe8d6 !important;
-}
-
-.exam-alert-soon .hero-button-alert {
-  color: var(--soon-hero-start) !important;
-  background: #fdf0c8 !important;
-}
-
-.countdown-big {
-  color: #ffe8a3 !important;
-  font-size: 1.0625rem !important;
-  font-weight: 800;
-}
-
-.exam-alert-urgent .countdown-big {
-  color: #ffd9bf !important;
-}
-
-.exam-alert-soon .countdown-big {
-  color: #ffe8a3 !important;
 }
 
 .alert-summary b {
   color: #fff !important;
+}
+
+.alert-level-summary {
+  min-width: 118px;
+}
+
+.alert-level-summary b.level-chip {
+  width: fit-content;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem !important;
+}
+
+.alert-level-summary b.level-chip.level-easy {
+  color: #0d5c46;
+  background: #d9f5eb;
+}
+
+.alert-level-summary b.level-chip.level-medium {
+  color: #6d4703;
+  background: #fdeec4;
+}
+
+.alert-level-summary b.level-chip.level-hard {
+  color: #7a1226;
+  background: #ffd9e0;
 }
 
 /* Button primary shifts to alert tone while in alert mode */
@@ -1963,54 +2173,54 @@ main {
   background: var(--alert-strong);
 }
 
-.exam-alert.exam-alert-urgent .button.primary {
-  background: var(--urgent);
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--urgent) 22%, transparent);
+.exam-alert.exam-alert-warning .button.primary {
+  background: var(--warning);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--warning) 22%, transparent);
 }
 
-.exam-alert.exam-alert-urgent .button.primary:hover {
-  background: var(--urgent-strong);
+.exam-alert.exam-alert-warning .button.primary:hover {
+  background: var(--warning-strong);
 }
 
-.exam-alert.exam-alert-soon .button.primary {
-  background: var(--soon);
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--soon) 20%, transparent);
+.exam-alert.exam-alert-warning .button.primary {
+  background: var(--warning);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--warning) 20%, transparent);
 }
 
 .exam-alert .eyebrow {
   color: var(--alert);
 }
 
-.exam-alert.exam-alert-urgent .eyebrow {
-  color: var(--urgent);
+.exam-alert.exam-alert-warning .eyebrow {
+  color: var(--warning);
 }
 
-.exam-alert.exam-alert-soon .eyebrow {
-  color: var(--soon);
+.exam-alert.exam-alert-warning .eyebrow {
+  color: var(--warning);
 }
 
 .exam-alert .progress-track i {
   background: var(--alert);
 }
 
-.exam-alert.exam-alert-urgent .progress-track i {
-  background: var(--urgent);
+.exam-alert.exam-alert-warning .progress-track i {
+  background: var(--warning);
 }
 
-.exam-alert.exam-alert-soon .progress-track i {
-  background: var(--soon);
+.exam-alert.exam-alert-warning .progress-track i {
+  background: var(--warning);
 }
 
 .exam-alert .week-progress b {
   color: var(--alert);
 }
 
-.exam-alert.exam-alert-urgent .week-progress b {
-  color: var(--urgent);
+.exam-alert.exam-alert-warning .week-progress b {
+  color: var(--warning);
 }
 
-.exam-alert.exam-alert-soon .week-progress b {
-  color: var(--soon);
+.exam-alert.exam-alert-warning .week-progress b {
+  color: var(--warning);
 }
 
 /* Today column accent follows alert */
@@ -2019,14 +2229,14 @@ main {
   box-shadow: 0 8px 25px color-mix(in srgb, var(--alert) 10%, transparent);
 }
 
-.exam-alert.exam-alert-urgent .day-column.today {
-  border-color: color-mix(in srgb, var(--urgent) 45%, var(--line));
-  box-shadow: 0 8px 25px color-mix(in srgb, var(--urgent) 10%, transparent);
+.exam-alert.exam-alert-warning .day-column.today {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
+  box-shadow: 0 8px 25px color-mix(in srgb, var(--warning) 10%, transparent);
 }
 
-.exam-alert.exam-alert-soon .day-column.today {
-  border-color: color-mix(in srgb, var(--soon) 45%, var(--line));
-  box-shadow: 0 8px 25px color-mix(in srgb, var(--soon) 10%, transparent);
+.exam-alert.exam-alert-warning .day-column.today {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
+  box-shadow: 0 8px 25px color-mix(in srgb, var(--warning) 10%, transparent);
 }
 
 .exam-alert .day-head em {
@@ -2034,14 +2244,14 @@ main {
   background: var(--alert-soft);
 }
 
-.exam-alert.exam-alert-urgent .day-head em {
-  color: var(--urgent);
-  background: var(--urgent-soft);
+.exam-alert.exam-alert-warning .day-head em {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
-.exam-alert.exam-alert-soon .day-head em {
-  color: var(--soon);
-  background: var(--soon-soft);
+.exam-alert.exam-alert-warning .day-head em {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 /* Mini-add, text-button, and focus rings recolour */
@@ -2050,26 +2260,26 @@ main {
   background: var(--alert-soft);
 }
 
-.exam-alert.exam-alert-urgent .mini-add {
-  color: var(--urgent);
-  background: var(--urgent-soft);
+.exam-alert.exam-alert-warning .mini-add {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
-.exam-alert.exam-alert-soon .mini-add {
-  color: var(--soon);
-  background: var(--soon-soft);
+.exam-alert.exam-alert-warning .mini-add {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .exam-alert .text-button {
   color: var(--alert);
 }
 
-.exam-alert.exam-alert-urgent .text-button {
-  color: var(--urgent);
+.exam-alert.exam-alert-warning .text-button {
+  color: var(--warning);
 }
 
-.exam-alert.exam-alert-soon .text-button {
-  color: var(--soon);
+.exam-alert.exam-alert-warning .text-button {
+  color: var(--warning);
 }
 
 .exam-alert .blank-icon {
@@ -2077,14 +2287,14 @@ main {
   background: var(--alert-soft);
 }
 
-.exam-alert.exam-alert-urgent .blank-icon {
-  color: var(--urgent);
-  background: var(--urgent-soft);
+.exam-alert.exam-alert-warning .blank-icon {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
-.exam-alert.exam-alert-soon .blank-icon {
-  color: var(--soon);
-  background: var(--soon-soft);
+.exam-alert.exam-alert-warning .blank-icon {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .exam-alert .exam-date {
@@ -2092,14 +2302,14 @@ main {
   background: var(--alert-soft);
 }
 
-.exam-alert.exam-alert-urgent .exam-date {
-  color: var(--urgent);
-  background: var(--urgent-soft);
+.exam-alert.exam-alert-warning .exam-date {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
-.exam-alert.exam-alert-soon .exam-date {
-  color: var(--soon);
-  background: var(--soon-soft);
+.exam-alert.exam-alert-warning .exam-date {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .exam-alert .more-button:hover {
@@ -2107,14 +2317,14 @@ main {
   background: var(--alert-soft);
 }
 
-.exam-alert.exam-alert-urgent .more-button:hover {
-  color: var(--urgent);
-  background: var(--urgent-soft);
+.exam-alert.exam-alert-warning .more-button:hover {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
-.exam-alert.exam-alert-soon .more-button:hover {
-  color: var(--soon);
-  background: var(--soon-soft);
+.exam-alert.exam-alert-warning .more-button:hover {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .exam-alert .menu button:hover {
@@ -2122,14 +2332,14 @@ main {
   background: var(--alert-soft);
 }
 
-.exam-alert.exam-alert-urgent .menu button:hover {
-  color: var(--urgent);
-  background: var(--urgent-soft);
+.exam-alert.exam-alert-warning .menu button:hover {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
-.exam-alert.exam-alert-soon .menu button:hover {
-  color: var(--soon);
-  background: var(--soon-soft);
+.exam-alert.exam-alert-warning .menu button:hover {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 /* Bottom-nav alert styling */
@@ -2137,12 +2347,12 @@ main {
   border-top-color: color-mix(in srgb, var(--alert) 25%, var(--line));
 }
 
-.exam-alert-urgent .bottom-nav.nav-alert {
-  border-top-color: color-mix(in srgb, var(--urgent) 25%, var(--line));
+.exam-alert-warning .bottom-nav.nav-alert {
+  border-top-color: color-mix(in srgb, var(--warning) 25%, var(--line));
 }
 
-.exam-alert-soon .bottom-nav.nav-alert {
-  border-top-color: color-mix(in srgb, var(--soon) 25%, var(--line));
+.exam-alert-warning .bottom-nav.nav-alert {
+  border-top-color: color-mix(in srgb, var(--warning) 25%, var(--line));
 }
 
 .bottom-nav .nav-add-alert {
@@ -2151,26 +2361,26 @@ main {
   animation: pulse-fab 1.8s ease-in-out infinite;
 }
 
-.exam-alert-urgent .bottom-nav .nav-add-alert {
-  background: var(--urgent);
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--urgent) 30%, transparent);
+.exam-alert-warning .bottom-nav .nav-add-alert {
+  background: var(--warning);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--warning) 30%, transparent);
 }
 
-.exam-alert-soon .bottom-nav .nav-add-alert {
-  background: var(--soon);
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--soon) 28%, transparent);
+.exam-alert-warning .bottom-nav .nav-add-alert {
+  background: var(--warning);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--warning) 28%, transparent);
 }
 
 .bottom-nav .nav-exam-alert {
   color: var(--alert);
 }
 
-.exam-alert-urgent .bottom-nav .nav-exam-alert {
-  color: var(--urgent);
+.exam-alert-warning .bottom-nav .nav-exam-alert {
+  color: var(--warning);
 }
 
-.exam-alert-soon .bottom-nav .nav-exam-alert {
-  color: var(--soon);
+.exam-alert-warning .bottom-nav .nav-exam-alert {
+  color: var(--warning);
 }
 
 .bottom-nav .nav-exam-alert i.alert-badge {
@@ -2178,12 +2388,12 @@ main {
   animation: pulse-dot 1.4s ease-in-out infinite;
 }
 
-.exam-alert-urgent .bottom-nav .nav-exam-alert i.alert-badge {
-  background: var(--urgent);
+.exam-alert-warning .bottom-nav .nav-exam-alert i.alert-badge {
+  background: var(--warning);
 }
 
-.exam-alert-soon .bottom-nav .nav-exam-alert i.alert-badge {
-  background: var(--soon);
+.exam-alert-warning .bottom-nav .nav-exam-alert i.alert-badge {
+  background: var(--warning);
 }
 
 /* Mobile day-picker selected colour shifts in alert mode */
@@ -2193,16 +2403,16 @@ main {
   box-shadow: 0 7px 16px color-mix(in srgb, var(--alert) 22%, transparent);
 }
 
-.exam-alert.exam-alert-urgent .mobile-day-picker button.selected {
-  background: var(--urgent);
-  border-color: var(--urgent);
-  box-shadow: 0 7px 16px color-mix(in srgb, var(--urgent) 22%, transparent);
+.exam-alert.exam-alert-warning .mobile-day-picker button.selected {
+  background: var(--warning);
+  border-color: var(--warning);
+  box-shadow: 0 7px 16px color-mix(in srgb, var(--warning) 22%, transparent);
 }
 
-.exam-alert.exam-alert-soon .mobile-day-picker button.selected {
-  background: var(--soon);
-  border-color: var(--soon);
-  box-shadow: 0 7px 16px color-mix(in srgb, var(--soon) 22%, transparent);
+.exam-alert.exam-alert-warning .mobile-day-picker button.selected {
+  background: var(--warning);
+  border-color: var(--warning);
+  box-shadow: 0 7px 16px color-mix(in srgb, var(--warning) 22%, transparent);
 }
 
 .exam-alert .mobile-day-picker button.today:not(.selected) {
@@ -2210,14 +2420,14 @@ main {
   border-color: color-mix(in srgb, var(--alert) 35%, var(--line));
 }
 
-.exam-alert.exam-alert-urgent .mobile-day-picker button.today:not(.selected) {
-  color: var(--urgent);
-  border-color: color-mix(in srgb, var(--urgent) 35%, var(--line));
+.exam-alert.exam-alert-warning .mobile-day-picker button.today:not(.selected) {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
 }
 
-.exam-alert.exam-alert-soon .mobile-day-picker button.today:not(.selected) {
-  color: var(--soon);
-  border-color: color-mix(in srgb, var(--soon) 35%, var(--line));
+.exam-alert.exam-alert-warning .mobile-day-picker button.today:not(.selected) {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
 }
 
 /* Search + settings recolour */
@@ -2225,12 +2435,12 @@ main {
   border-color: color-mix(in srgb, var(--alert) 50%, var(--line));
 }
 
-.exam-alert.exam-alert-urgent .search-box:focus-within {
-  border-color: color-mix(in srgb, var(--urgent) 50%, var(--line));
+.exam-alert.exam-alert-warning .search-box:focus-within {
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--line));
 }
 
-.exam-alert.exam-alert-soon .search-box:focus-within {
-  border-color: color-mix(in srgb, var(--soon) 50%, var(--line));
+.exam-alert.exam-alert-warning .search-box:focus-within {
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--line));
 }
 
 .exam-alert .theme-options button.selected {
@@ -2239,28 +2449,28 @@ main {
   border-color: color-mix(in srgb, var(--alert) 45%, var(--line));
 }
 
-.exam-alert.exam-alert-urgent .theme-options button.selected {
-  color: var(--urgent);
-  background: var(--urgent-soft);
-  border-color: color-mix(in srgb, var(--urgent) 45%, var(--line));
+.exam-alert.exam-alert-warning .theme-options button.selected {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
 }
 
-.exam-alert.exam-alert-soon .theme-options button.selected {
-  color: var(--soon);
-  background: var(--soon-soft);
-  border-color: color-mix(in srgb, var(--soon) 45%, var(--line));
+.exam-alert.exam-alert-warning .theme-options button.selected {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
 }
 
 .exam-alert .font-scale-control strong {
   color: var(--alert);
 }
 
-.exam-alert.exam-alert-urgent .font-scale-control strong {
-  color: var(--urgent);
+.exam-alert.exam-alert-warning .font-scale-control strong {
+  color: var(--warning);
 }
 
-.exam-alert.exam-alert-soon .font-scale-control strong {
-  color: var(--soon);
+.exam-alert.exam-alert-warning .font-scale-control strong {
+  color: var(--warning);
 }
 
 .exam-alert .font-scale-button:hover:not(:disabled) {
@@ -2268,38 +2478,38 @@ main {
   border-color: color-mix(in srgb, var(--alert) 45%, var(--line));
 }
 
-.exam-alert.exam-alert-urgent .font-scale-button:hover:not(:disabled) {
-  color: var(--urgent);
-  border-color: color-mix(in srgb, var(--urgent) 45%, var(--line));
+.exam-alert.exam-alert-warning .font-scale-button:hover:not(:disabled) {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
 }
 
-.exam-alert.exam-alert-soon .font-scale-button:hover:not(:disabled) {
-  color: var(--soon);
-  border-color: color-mix(in srgb, var(--soon) 45%, var(--line));
+.exam-alert.exam-alert-warning .font-scale-button:hover:not(:disabled) {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
 }
 
 .exam-alert .toast > button {
   color: var(--alert);
 }
 
-.exam-alert.exam-alert-urgent .toast > button {
-  color: var(--urgent);
+.exam-alert.exam-alert-warning .toast > button {
+  color: var(--warning);
 }
 
-.exam-alert.exam-alert-soon .toast > button {
-  color: var(--soon);
+.exam-alert.exam-alert-warning .toast > button {
+  color: var(--warning);
 }
 
 .exam-alert .past-exams summary::after {
   color: var(--alert);
 }
 
-.exam-alert.exam-alert-urgent .past-exams summary::after {
-  color: var(--urgent);
+.exam-alert.exam-alert-warning .past-exams summary::after {
+  color: var(--warning);
 }
 
-.exam-alert.exam-alert-soon .past-exams summary::after {
-  color: var(--soon);
+.exam-alert.exam-alert-warning .past-exams summary::after {
+  color: var(--warning);
 }
 
 .exam-alert .sticker-preview {
@@ -2307,14 +2517,14 @@ main {
   background: var(--alert-soft);
 }
 
-.exam-alert.exam-alert-urgent .sticker-preview {
-  color: var(--urgent);
-  background: var(--urgent-soft);
+.exam-alert.exam-alert-warning .sticker-preview {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
-.exam-alert.exam-alert-soon .sticker-preview {
-  color: var(--soon);
-  background: var(--soon-soft);
+.exam-alert.exam-alert-warning .sticker-preview {
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .exam-alert .sticker-options button:hover,
@@ -2323,16 +2533,16 @@ main {
   border-color: var(--alert);
 }
 
-.exam-alert.exam-alert-urgent .sticker-options button:hover,
-.exam-alert.exam-alert-urgent .sticker-options button.selected {
-  background: var(--urgent-soft);
-  border-color: var(--urgent);
+.exam-alert.exam-alert-warning .sticker-options button:hover,
+.exam-alert.exam-alert-warning .sticker-options button.selected {
+  background: var(--warning-soft);
+  border-color: var(--warning);
 }
 
-.exam-alert.exam-alert-soon .sticker-options button:hover,
-.exam-alert.exam-alert-soon .sticker-options button.selected {
-  background: var(--soon-soft);
-  border-color: var(--soon);
+.exam-alert.exam-alert-warning .sticker-options button:hover,
+.exam-alert.exam-alert-warning .sticker-options button.selected {
+  background: var(--warning-soft);
+  border-color: var(--warning);
 }
 
 .exam-alert .sticker-custom-field input:focus {
@@ -2340,18 +2550,18 @@ main {
   outline-color: color-mix(in srgb, var(--alert) 14%, transparent);
 }
 
-.exam-alert.exam-alert-urgent .sticker-custom-field input:focus {
-  border-color: var(--urgent);
-  outline-color: color-mix(in srgb, var(--urgent) 14%, transparent);
+.exam-alert.exam-alert-warning .sticker-custom-field input:focus {
+  border-color: var(--warning);
+  outline-color: color-mix(in srgb, var(--warning) 14%, transparent);
 }
 
-.exam-alert.exam-alert-soon .sticker-custom-field input:focus {
-  border-color: var(--soon);
-  outline-color: color-mix(in srgb, var(--soon) 14%, transparent);
+.exam-alert.exam-alert-warning .sticker-custom-field input:focus {
+  border-color: var(--warning);
+  outline-color: color-mix(in srgb, var(--warning) 14%, transparent);
 }
 
-/* Critical pulse for the closest exam card */
-.exam-card.urgent {
+/* Critical pulse for exams that are inside their red window. */
+.exam-card.exam-alert-card.alert-critical {
   animation: urgent-pulse 2s ease-in-out infinite;
 }
 
@@ -2388,7 +2598,7 @@ main {
 
 @keyframes urgent-pulse {
   0%, 100% { box-shadow: var(--shadow-sm); }
-  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 25%, transparent), var(--shadow-sm); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--alert) 28%, transparent), var(--shadow-sm); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2399,7 +2609,7 @@ main {
   .hero-button-alert,
   .nav-add-alert,
   .nav-exam-alert i.alert-badge,
-  .exam-card.urgent {
+  .exam-card.exam-alert-card.alert-critical {
     animation: none !important;
   }
 }
@@ -2708,8 +2918,34 @@ main {
   .exam-card {
     min-height: 98px;
     gap: 12px;
-    padding: 13px 11px;
+    padding: 26px 11px 13px;
     border-radius: 16px;
+  }
+
+  .level-badge {
+    top: 7px;
+    inset-inline-end: 9px;
+  }
+
+  .difficulty-options {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .difficulty-option {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 8px;
+    padding: 8px 11px;
+  }
+
+  .difficulty-option i {
+    grid-row: 1 / span 2;
+    margin-bottom: 0;
+  }
+
+  .difficulty-option small {
+    grid-column: 2;
   }
 
   .exam-date {
@@ -3583,7 +3819,7 @@ body.plan-dragging * {
 }
 
 /* ==========================================================================
-   exam topics + live countdown
+   exam topics
    ========================================================================== */
 .exam-card {
   --plan-color: var(--brand);
@@ -3716,40 +3952,6 @@ body.plan-dragging * {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-}
-
-/* Live countdown: fixed-width digits so the clock never jitters. */
-.live-clock {
-  display: inline-block;
-  margin-inline-start: 5px;
-  padding: 1px 5px;
-  color: var(--brand);
-  background: color-mix(in srgb, var(--brand) 12%, transparent);
-  border-radius: 6px;
-  font-style: normal;
-  font-size: 0.625rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.5px;
-}
-
-.countdown-big {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.5px;
-}
-
-.countdown-summary {
-  min-width: 128px;
-}
-
-.exam-card.urgent .live-clock {
-  color: var(--urgent);
-  background: var(--urgent-soft);
-}
-
-.exam-alert .live-clock {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.2);
 }
 
 @media (prefers-reduced-motion: reduce) {

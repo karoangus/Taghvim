@@ -1,14 +1,14 @@
 /* Offline-first service worker for Taghvim.
    The production build injects the app version and every built local asset. */
-const LP_APP_VERSION = '1.2.0';
+const LP_APP_VERSION = '1.3.0';
 const CACHE_PREFIX = 'taghvim-v';
-const CACHE_NAME = 'taghvim-v1.2.0-11976223ca99';
+const CACHE_NAME = 'taghvim-v1.3.0-ffb3d9c9b55e';
 const PRECACHE_ASSETS = [
-  "assets/index-BharJAjr.js?v=1.2.0",
-  "assets/index-k9cUyjL-.css?v=1.2.0",
-  "css/offline.css?v=1.2.0",
-  "icon.svg?v=1.2.0",
-  "js/offline.js?v=1.2.0"
+  "assets/index-8hyIBKNv.css?v=1.3.0",
+  "assets/index-C1Xc63Tx.js?v=1.3.0",
+  "css/offline.css?v=1.3.0",
+  "icon.svg?v=1.3.0",
+  "js/offline.js?v=1.3.0"
 ];
 const APP_SCOPE = self.registration.scope;
 const APP_ORIGIN = new URL(APP_SCOPE).origin;

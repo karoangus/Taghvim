@@ -1,6 +1,6 @@
 /* Shared offline, storage and PWA-install hooks for the app shell. */
 (() => {
-  const LP_APP_VERSION = '1.2.0';
+  const LP_APP_VERSION = '1.3.0';
   const STORAGE_PERSISTENCE_KEY = 'taghvim-storage-persisted';
   const OFFLINE_TIMEOUT_MS = 10000;
   let deferredInstallPrompt = null;

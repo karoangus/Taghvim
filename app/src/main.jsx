@@ -280,24 +280,24 @@ function saveStoragePersistenceStatus(status) {
 }
 
 async function readStoragePersistenceStatus() {
-  if (!navigator.storage?.persisted) return saveStoragePersistenceStatus('unsupported');
+  if (typeof window.ensurePersist === 'function') return window.ensurePersist();
+  const storage = navigator.storage;
+  if (!storage?.persisted) return saveStoragePersistenceStatus('unsupported');
   try {
-    const persisted = await navigator.storage.persisted();
+    let persisted = await storage.persisted();
+    if (!persisted) {
+      if (!storage.persist) return saveStoragePersistenceStatus('unsupported');
+      await storage.persist();
+      persisted = await storage.persisted();
+    }
     return saveStoragePersistenceStatus(persisted ? 'granted' : 'not-granted');
   } catch {
-    return saveStoragePersistenceStatus('unsupported');
+    return saveStoragePersistenceStatus('not-granted');
   }
 }
 
 async function requestStoragePersistence() {
-  const storage = navigator.storage;
-  if (!storage?.persist || !storage?.persisted) return saveStoragePersistenceStatus('unsupported');
-  try {
-    if (!await storage.persisted()) await storage.persist();
-    return saveStoragePersistenceStatus(await storage.persisted() ? 'granted' : 'not-granted');
-  } catch {
-    return saveStoragePersistenceStatus('not-granted');
-  }
+  return readStoragePersistenceStatus();
 }
 
 function sendOfflineWorkerMessage(type, timeoutMs = 10000) {
@@ -333,11 +333,21 @@ function sendOfflineWorkerMessage(type, timeoutMs = 10000) {
 }
 
 function lpEnsureOfflineReady() {
-  return sendOfflineWorkerMessage('LP_ENSURE_OFFLINE_READY');
+  return typeof window.lpEnsureOfflineReady === 'function'
+    ? window.lpEnsureOfflineReady()
+    : sendOfflineWorkerMessage('LP_ENSURE_OFFLINE_READY');
 }
 
 function lpCheckOfflineReady() {
-  return sendOfflineWorkerMessage('LP_CHECK_OFFLINE_READY');
+  return typeof window.lpTestOffline === 'function'
+    ? window.lpTestOffline()
+    : sendOfflineWorkerMessage('LP_CHECK_OFFLINE_READY');
+}
+
+function offlineStateFromResult(result) {
+  if (result?.ok) return 'ready';
+  if (result?.missing?.length) return 'missing';
+  return 'unavailable';
 }
 
 function loadTheme() {
@@ -785,7 +795,7 @@ function SettingsPanel({
   theme, setTheme, fontScale, setFontScale, lang, setLang,
   reduceMotion, setReduceMotion,
   plansCount, examsCount, examTotal,
-  storagePersistence, isStandalone, installPromptAvailable, offlineBusy,
+  storagePersistence, offlineCacheState, isStandalone, installPromptAvailable, offlineBusy,
   onEnsureOffline, onTestOffline, onInstall,
   onExport, onExportIcs, onImport, onClearAll, onClose,
   t, format,
@@ -894,22 +904,25 @@ function SettingsPanel({
           </button>
         </div>
 
-        <div className="setting-block offline-setting">
+        <div className="setting-block offline-setting offline-card">
           <div className="setting-copy">
             <b>{t('settings.offline')}</b>
             <span>{t('settings.offlineHint')}</span>
+            <span id="offlineStatusText" className="offline-status" data-cache-state={offlineCacheState} aria-live="polite">
+              {t(`offline.cache.${offlineCacheState}`)}
+            </span>
             <span className="offline-storage-status">{t(`offline.storage.${storagePersistence}`)}</span>
-            <small id="settingsVersion" className="settings-version">{t('offline.version', { version: LP_APP_VERSION })}</small>
+            <small id="settingsVersion" className="settings-version" data-version={LP_APP_VERSION}>{t('offline.version', { version: LP_APP_VERSION })}</small>
             {installPromptAvailable && <span>{t('offline.installAvailable')}</span>}
           </div>
           <div className="offline-actions">
-            <button className="button secondary" type="button" disabled={offlineBusy} onClick={onEnsureOffline}>
+            <button className="button secondary" type="button" data-offline-action="lpEnsureOfflineReady" disabled={offlineBusy} onClick={onEnsureOffline}>
               {t('offline.saveButton')}
             </button>
-            <button className="button secondary" type="button" disabled={offlineBusy} onClick={onTestOffline}>
+            <button className="button secondary" type="button" data-offline-action="lpTestOffline" disabled={offlineBusy} onClick={onTestOffline}>
               {t('offline.testButton')}
             </button>
-            <button className="button secondary" type="button" disabled={isStandalone || offlineBusy} onClick={onInstall}>
+            <button className="button secondary" type="button" data-offline-action="lpTriggerInstall" disabled={isStandalone || offlineBusy} onClick={onInstall}>
               {isStandalone ? t('offline.installedButton') : t('offline.installButton')}
             </button>
           </div>
@@ -1193,6 +1206,8 @@ function App() {
     try { return localStorage.getItem(STORAGE_PERSISTENCE_KEY) || 'checking'; } catch { return 'unsupported'; }
   });
   const [offlineBusy, setOfflineBusy] = useState(false);
+  const [offlineCacheState, setOfflineCacheState] = useState('checking');
+  const networkStateRef = useRef(isOnline);
   const searchRef = useRef(null);
 
   const t = useMemo(() => translator(lang), [lang]);
@@ -1396,15 +1411,58 @@ function App() {
 
   const notify = useCallback((message, undo) => setToast({ id: uid(), message, undo }), []);
 
+  // React renders the SettingsPanel; refresh its status through the shared helper whenever it opens.
+  useEffect(() => {
+    const updateOfflineCard = (source) => {
+      const state = source?.detail || source || {};
+      const cache = state.cache || state;
+      setStoragePersistence(state.persistence || 'unsupported');
+      setOfflineCacheState(offlineStateFromResult(cache));
+      if (typeof state.installAvailable === 'boolean') setInstallPromptAvailable(state.installAvailable);
+      if (typeof state.standalone === 'boolean') setIsStandalone(state.standalone);
+    };
+    const onOfflineCard = (event) => updateOfflineCard(event);
+    window.addEventListener('lp:offline-card', onOfflineCard);
+
+    if (settingsOpen) {
+      setOfflineCacheState('checking');
+      const render = typeof window.renderOfflineCard === 'function'
+        ? window.renderOfflineCard()
+        : lpCheckOfflineReady();
+      Promise.resolve(render).then(updateOfflineCard).catch(() => setOfflineCacheState('unavailable'));
+    }
+
+    return () => window.removeEventListener('lp:offline-card', onOfflineCard);
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    const updateNetworkToast = () => {
+      const online = navigator.onLine !== false;
+      setIsOnline(online);
+      if (networkStateRef.current !== online) {
+        networkStateRef.current = online;
+        notify(t(online ? 'offline.toastOnline' : 'offline.toastOffline'));
+      }
+    };
+    window.addEventListener('online', updateNetworkToast);
+    window.addEventListener('offline', updateNetworkToast);
+    return () => {
+      window.removeEventListener('online', updateNetworkToast);
+      window.removeEventListener('offline', updateNetworkToast);
+    };
+  }, [notify, t]);
+
   const ensureOffline = useCallback(async () => {
     setOfflineBusy(true);
     try {
-      setStoragePersistence(await requestStoragePersistence());
       const result = await lpEnsureOfflineReady();
+      setStoragePersistence(result.persistence || await requestStoragePersistence());
+      setOfflineCacheState(offlineStateFromResult(result));
       if (result.ok) notify(t('offline.saved'));
       else if (result.missing?.length) notify(t('offline.saveFailed', { count: format.num(result.missing.length) }));
       else notify(t('offline.saveUnavailable'));
     } catch {
+      setOfflineCacheState('unavailable');
       notify(t('offline.saveUnavailable'));
     } finally {
       setOfflineBusy(false);
@@ -1415,6 +1473,7 @@ function App() {
     setOfflineBusy(true);
     try {
       const result = await lpCheckOfflineReady();
+      setOfflineCacheState(offlineStateFromResult(result));
       if (!result.ok && result.missing?.length) {
         notify(t('offline.testMissing', { count: format.num(result.missing.length) }));
       } else if (!result.ok) {
@@ -1423,6 +1482,7 @@ function App() {
         notify(isOnline ? t('offline.testReady') : t('offline.testPassed'));
       }
     } catch {
+      setOfflineCacheState('unavailable');
       notify(t('offline.testFailed'));
     } finally {
       setOfflineBusy(false);
@@ -1430,17 +1490,24 @@ function App() {
   }, [format, isOnline, notify, t]);
 
   const installApp = useCallback(async () => {
-    if (isStandalone) {
+    if (isStandalone || window.LPOffline?.isStandalone?.()) {
       notify(t('offline.alreadyInstalled'));
       return;
     }
-    if (!window.LPOffline?.hasInstallPrompt) {
+    if (typeof window.lpCanInstall === 'function' && !window.lpCanInstall()) {
       notify(t('offline.installInstructions'));
       return;
     }
-    const result = await window.LPOffline.promptInstall();
+    if (typeof window.lpCanInstall !== 'function' && !window.LPOffline?.hasInstallPrompt) {
+      notify(t('offline.installInstructions'));
+      return;
+    }
+    const result = typeof window.lpTriggerInstall === 'function'
+      ? await window.lpTriggerInstall()
+      : await window.LPOffline?.promptInstall?.();
     if (result?.outcome === 'accepted') notify(t('offline.installAccepted'));
     else if (result?.outcome === 'dismissed') notify(t('offline.installDismissed'));
+    else if (result?.outcome === 'already-installed') notify(t('offline.alreadyInstalled'));
     else notify(t('offline.installInstructions'));
   }, [isStandalone, notify, t]);
 
@@ -1895,20 +1962,14 @@ function App() {
               <span>{format.days[todayIndex]?.name}</span>
               <b>{format.fullDate(now)}</b>
             </div>
-            {!isOnline && <span className="offline-badge" role="status">{t('offline.badge')}</span>}
+            {!isOnline && <span id="offlineBadge" className="offline-badge" role="status">{t('offline.badge')}</span>}
             <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label={t('action.settings')}><Settings size={20} /></button>
           </div>
         </div>
       </header>
 
-      {!isOnline && (
-        <div className="offline-banner" role="status" aria-live="polite">
-          {t('offline.banner')}
-        </div>
-      )}
-
       {alertLevel && alertExam && (
-        <div className={`exam-alert-banner level-${alertLevel}`} role="alert">
+        <div id="crisisBanner" className={`exam-alert-banner level-${alertLevel}`} role="alert">
           <div className="banner-icon">
             {alertLevel === 'critical' ? <AlertTriangle size={22} /> : <Flame size={22} />}
           </div>
@@ -1917,6 +1978,12 @@ function App() {
             <span>{format.longDate(parseLocalDate(alertExam.date))} — {remainingLabel(alertExam, now, t, format)}</span>
           </div>
           <button className="banner-action" onClick={() => switchTab('exams')}>{t('action.view')}</button>
+        </div>
+      )}
+
+      {!isOnline && (
+        <div id="offlineBanner" className="offline-banner" role="status" aria-live="polite">
+          {t('offline.banner')}
         </div>
       )}
 
@@ -2288,6 +2355,7 @@ function App() {
           examsCount={exams.length}
           examTotal={exams.length}
           storagePersistence={storagePersistence}
+          offlineCacheState={offlineCacheState}
           isStandalone={isStandalone}
           installPromptAvailable={installPromptAvailable}
           offlineBusy={offlineBusy}

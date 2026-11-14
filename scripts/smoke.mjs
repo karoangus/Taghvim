@@ -18,6 +18,7 @@ import { dirname, join } from 'node:path';
 import { JSDOM } from 'jsdom';
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
+const APP_VERSION = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')).version;
 const PAGE_URL = 'https://karoangus.github.io/Taghvim/'; // simulate GitHub Pages sub-path
 const bundleFile = readdirSync(join(rootDir, 'assets')).find((f) => f.endsWith('.js'));
 
@@ -157,14 +158,16 @@ click(w, w.document.querySelector('.icon-button[aria-label="تنظیمات"]'));
 await tick();
 ok(text(w).includes('تنظیمات تقویم'), 'settings panel opens');
 ok(text(w).includes('آفلاین و اینترنت ملی'), 'settings honestly explain the domain and offline limitation');
-ok(!!w.document.querySelector('#settingsVersion')?.textContent.includes('1.1.0'), 'the settings panel shows the app version');
-ok(!!findButton(w, 'ذخیره آفلاین', '.settings-modal button'), 'the user can repair/cache the offline shell');
-ok(!!findButton(w, 'تست آفلاین', '.settings-modal button'), 'the user can verify offline cache completeness');
-ok(!!findButton(w, 'نصب روی گوشی', '.settings-modal button'), 'the PWA install action is available');
+ok(!!w.document.querySelector('#settingsVersion')?.textContent.includes(APP_VERSION), 'the settings panel shows the synchronized app version');
+ok(Boolean(w.document.querySelector('#offlineStatusText')?.textContent.trim()), 'the settings card exposes live offline-cache status');
+ok(!!w.document.querySelector('.offline-card'), 'the offline controls are presented as a settings card');
+ok(!!findButton(w, 'ذخیره آفلاین', '.settings-modal button[data-offline-action="lpEnsureOfflineReady"]'), 'the user can repair/cache the offline shell');
+ok(!!findButton(w, 'تست آفلاین', '.settings-modal button[data-offline-action="lpTestOffline"]'), 'the user can verify offline cache completeness');
+ok(!!findButton(w, 'نصب روی گوشی', '.settings-modal button[data-offline-action="lpTriggerInstall"]'), 'the PWA install action is available');
 await tick(40);
 ok(['granted', 'not-granted', 'unsupported'].includes(w.localStorage.getItem('taghvim-storage-persisted')),
   'persistent-storage support/status is saved in localStorage');
-ok(w.localStorage.getItem('taghvim-settingsVersion') === '1.1.0', 'settings version is stored locally');
+ok(w.localStorage.getItem('taghvim-settingsVersion') === APP_VERSION, 'settings version is stored locally');
 ok(query(w, '.theme-options button').length === 3, 'automatic, light, and dark themes are available');
 click(w, findButton(w, 'تیره', '.theme-options button'));
 await tick();
@@ -191,12 +194,14 @@ ok(text(w).includes('میان‌برهای صفحه‌کلید'), 'keyboard shor
 Object.defineProperty(w.navigator, 'onLine', { configurable: true, value: false });
 w.dispatchEvent(new w.Event('offline'));
 await tick();
-ok(!!w.document.querySelector('.offline-banner') && !!w.document.querySelector('.offline-badge'),
+ok(!!w.document.querySelector('#offlineBanner.offline-banner') && !!w.document.querySelector('#offlineBadge.offline-badge'),
   'an offline banner and header badge appear only after the browser reports offline');
+ok(!!w.document.querySelector('.toast')?.textContent.includes('اتصال اینترنت قطع شد'), 'going offline produces an accessible toast');
 Object.defineProperty(w.navigator, 'onLine', { configurable: true, value: true });
 w.dispatchEvent(new w.Event('online'));
 await tick();
 ok(!w.document.querySelector('.offline-banner'), 'the offline banner disappears when connectivity returns');
+ok(!!w.document.querySelector('.toast')?.textContent.includes('اتصال اینترنت دوباره برقرار شد'), 'going online produces a translated toast');
 click(w, w.document.querySelector('.settings-modal .close-button'));
 await tick();
 

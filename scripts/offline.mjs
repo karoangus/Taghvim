@@ -8,6 +8,7 @@ import vm from 'node:vm';
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const html = readFileSync(join(rootDir, 'index.html'), 'utf8');
+const readme = readFileSync(join(rootDir, 'README.md'), 'utf8');
 const workerSource = readFileSync(join(rootDir, 'sw.js'), 'utf8');
 const assetNames = readdirSync(join(rootDir, 'assets')).sort();
 const scope = 'https://karoangus.github.io/Taghvim/';
@@ -25,6 +26,8 @@ const precachePaths = precacheAssets.map((asset) => asset.split('?')[0]);
 const packageVersion = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')).version;
 const appVersion = JSON.parse(readFileSync(join(rootDir, 'app-version.json'), 'utf8')).version;
 assert.equal(appVersion, packageVersion, 'app-version.json agrees with package.json');
+assert.ok(workerCacheName.startsWith(`taghvim-v${packageVersion}-`), 'the cache name uses the current app version');
+assert.ok(readme.includes('`CACHE_NAME`: `' + workerCacheName + '`'), 'README documents the generated cache name');
 assert.ok(precacheAssets.every((asset) => asset.endsWith(`?v=${packageVersion}`)),
   'all fingerprinted app bundles carry the app version query');
 const versionedAppAssets = [...html.matchAll(/(?:src|href)=["']([^"']+\.(?:m?js|css))\?v=([^"']+)["']/gi)];
@@ -35,10 +38,16 @@ for (const [, , referencedVersion] of versionedAppAssets) {
 for (const asset of assetNames) {
   assert.ok(precachePaths.includes(`assets/${asset}`), `${asset} is precached during install`);
 }
+for (const file of readdirSync(join(rootDir, 'css')).filter((name) => name.endsWith('.css'))) {
+  assert.ok(precachePaths.includes(`css/${file}`), `${file} from css/ is version-pre-cached`);
+}
+for (const file of readdirSync(join(rootDir, 'js')).filter((name) => name.endsWith('.js'))) {
+  assert.ok(precachePaths.includes(`js/${file}`), `${file} from js/ is version-pre-cached`);
+}
 for (const [, reference] of html.matchAll(/(?:src|href)=["']\.\/assets\/([^"'?#]+)["']/g)) {
   assert.ok(precachePaths.includes(`assets/${reference}`), `${reference} linked from index.html is precached`);
 }
-for (const file of ['offline.html', 'manifest.webmanifest', 'icon.svg', 'app-version.json', 'css/offline.css', 'js/offline.js']) {
+for (const file of ['offline.html', 'manifest.json', 'manifest.webmanifest', 'icon.svg', 'app-version.json', 'css/offline.css', 'js/offline.js']) {
   assert.ok(workerSource.includes(`./${file}`), `${file} is explicitly included in the worker shell`);
 }
 
@@ -48,6 +57,7 @@ let skipWaitingCalled = false;
 let clientsClaimed = false;
 let preloadDisabled = false;
 const networkRequests = [];
+const networkCacheModes = [];
 const listeners = new Map();
 const cacheData = new Map();
 
@@ -56,13 +66,17 @@ const requestUrl = (request) => {
   return new URL(value, scriptUrl).href;
 };
 
-async function mockFetch(request) {
+async function mockFetch(request, options = {}) {
   const url = requestUrl(request);
   networkRequests.push(url);
+  networkCacheModes.push({ url, mode: typeof request === 'string' ? options.cache : request?.cache });
   if (!online) throw new TypeError('Network is offline');
-  return new Response(`network response: ${url}`, {
+  const isOfflinePage = new URL(url).pathname.endsWith('/offline.html');
+  return new Response(isOfflinePage
+    ? `<!doctype html><html><head></head><body>network response: ${url}</body></html>`
+    : `network response: ${url}`, {
     status: 200,
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    headers: { 'Content-Type': isOfflinePage ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8' },
   });
 }
 
@@ -104,6 +118,13 @@ const caches = {
     cacheFor(name);
     return cacheFor(name);
   },
+  async match(request, options = {}) {
+    for (const name of cacheData.keys()) {
+      const response = await cacheFor(name).match(request, options);
+      if (response) return response;
+    }
+    return undefined;
+  },
   async keys() {
     return [...cacheData.keys()];
   },
@@ -134,6 +155,7 @@ vm.runInNewContext(workerSource, {
   URL,
   Request,
   Response,
+  Headers,
   Promise,
   AbortController,
   setTimeout,
@@ -146,10 +168,15 @@ listeners.get('install')({ waitUntil(promise) { installLifetime = promise; } });
 await installLifetime;
 assert.ok(skipWaitingCalled, 'the fully cached worker activates immediately');
 assert.ok(cacheData.get(workerCacheName).size >= 10, 'the full app shell and production assets were saved');
+assert.ok(networkCacheModes.filter(({ mode }) => mode === 'reload').length >= cacheData.get(workerCacheName).size,
+  'install fetches every shell resource with cache: reload');
 const installedUrls = [...cacheData.get(workerCacheName).keys()];
 assert.ok(installedUrls.includes(`${scope}?v=${packageVersion}`), 'the versioned start page is cached');
 assert.ok(installedUrls.includes(`${new URL('index.html', scope).href}?v=${packageVersion}`), 'versioned index.html is cached');
-assert.ok(installedUrls.includes(`${new URL('manifest.webmanifest', scope).href}?v=${packageVersion}`), 'the versioned install manifest is cached');
+assert.ok(installedUrls.includes(`${new URL('manifest.json', scope).href}?v=${packageVersion}`), 'the JSON install manifest is versioned and cached');
+assert.ok(installedUrls.includes(`${new URL('manifest.webmanifest', scope).href}?v=${packageVersion}`), 'the webmanifest install manifest is versioned and cached');
+const manifestJson = JSON.parse(readFileSync(join(rootDir, 'manifest.json'), 'utf8'));
+assert.ok(manifestJson.display_override?.includes('standalone'), 'manifest.json includes display_override');
 for (const file of ['offline.html', 'icon.svg', 'app-version.json', 'css/offline.css', 'js/offline.js']) {
   assert.ok(installedUrls.includes(`${new URL(file, scope).href}?v=${packageVersion}`), `${file} is versioned and cached`);
 }
@@ -216,6 +243,32 @@ const onlineBundleResponse = await dispatchFetch(makeRequest(mainAssetUrl));
 assert.ok((await onlineBundleResponse.text()).includes('network response:'),
   'network-first resources prefer a successful online response');
 assert.ok(networkRequests.includes(mainAssetUrl), 'the online JS request reached the network');
+assert.ok(networkCacheModes.some(({ url, mode }) => url === mainAssetUrl && mode === 'no-store'),
+  'network-first JS fetches explicitly bypass the HTTP cache with no-store');
+const offlinePageUrl = new URL('offline.html', scope).href;
+networkRequests.length = 0;
+const directOfflinePage = await dispatchFetch(makeRequest(offlinePageUrl, 'cors'));
+assert.ok((await directOfflinePage.text()).includes('network response:'), 'offline.html is recognized as an HTML document');
+assert.ok(networkRequests.includes(offlinePageUrl), 'offline.html uses the network-first strategy while online');
+assert.ok(networkCacheModes.some(({ url, mode }) => url === offlinePageUrl && mode === 'no-store'),
+  'offline.html fetch uses no-store before the cached fallback');
+const cssUrlForFetch = new URL(cssAsset, scope).href;
+await dispatchFetch(makeRequest(cssUrlForFetch));
+assert.ok(networkCacheModes.some(({ url, mode }) => url === cssUrlForFetch && mode === 'no-store'),
+  'CSS uses network-first with no-store');
+const versionJsonUrl = new URL(`app-version.json?v=${packageVersion}`, scope).href;
+await dispatchFetch(makeRequest(versionJsonUrl));
+assert.ok(networkCacheModes.some(({ url, mode }) => url === versionJsonUrl && mode === 'no-store'),
+  'JSON uses network-first with no-store');
+const imageUrl = new URL('media/cache-first-test.png', scope).href;
+const firstImage = await dispatchFetch(makeRequest(imageUrl));
+assert.ok((await firstImage.text()).includes('network response:'), 'uncached media falls through to the network');
+const imageNetworkCount = networkRequests.filter((url) => url === imageUrl).length;
+online = false;
+const cachedImage = await dispatchFetch(makeRequest(imageUrl));
+assert.ok((await cachedImage.text()).includes('network response:'), 'media is served from cache on repeat/offline');
+assert.equal(networkRequests.filter((url) => url === imageUrl).length, imageNetworkCount, 'cache-first media avoids a second network request');
+online = true;
 
 online = false;
 networkInfo.onLine = true; // simulate a network block while the device still reports Wi-Fi
@@ -232,8 +285,10 @@ networkInfo.onLine = true;
 
 const deepPage = new URL('week/2', scope).href;
 const deepResponse = await dispatchFetch(makeRequest(deepPage, 'navigate'));
-assert.ok((await deepResponse.text()).includes(new URL('offline.html', scope).href),
+const deepHtml = await deepResponse.text();
+assert.ok(deepHtml.includes(new URL('offline.html', scope).href),
   'offline deep links fall back to the cached offline page');
+assert.ok(deepHtml.includes(`<base href="${scope}">`), 'deep-link fallback resolves CSS and recovery links against the app scope');
 
 const bundleResponse = await dispatchFetch(makeRequest(mainAssetUrl));
 assert.ok((await bundleResponse.text()).includes('network response:'),

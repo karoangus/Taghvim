@@ -1,14 +1,14 @@
 {
   "name": "taghvim",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite app --host 0.0.0.0",
-    "clean:build": "rm -rf assets sw.js manifest.webmanifest icon.svg index.html offline.html app-version.json css js",
+    "clean:build": "rm -rf assets sw.js manifest.json manifest.webmanifest icon.svg index.html offline.html app-version.json css js audio sound sounds icons",
     "build": "npm run clean:build && vite build app && node scripts/prepare-offline.mjs",
     "preview": "vite preview app --host 0.0.0.0",
-    "test": "npm run build && node scripts/smoke.mjs && node scripts/offline.mjs"
+    "test": "npm run build && node scripts/smoke.mjs && node scripts/offline.mjs && node scripts/offline-ui.mjs"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "latest",
